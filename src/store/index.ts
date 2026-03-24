@@ -369,7 +369,8 @@ export const useStore = create<AppState>()((set, get) => ({
       const [
         products, companies, orders, locations, inventory, 
         contracts, bundles, exceptions, fraudFlags, 
-        complianceDocs, incidents, workReports, attendance
+        complianceDocs, incidents, workReports, attendance,
+        users, employees
       ] = await Promise.all([
         SupabaseService.getProducts(),
         SupabaseService.getCompanies(),
@@ -383,7 +384,9 @@ export const useStore = create<AppState>()((set, get) => ({
         SupabaseService.getComplianceDocs(),
         SupabaseService.getIncidents(),
         SupabaseService.getWorkReports(),
-        SupabaseService.getAttendance()
+        SupabaseService.getAttendance(),
+        SupabaseService.getUsers(),
+        SupabaseService.getEmployees()
       ]);
       
       set({ 
@@ -391,9 +394,7 @@ export const useStore = create<AppState>()((set, get) => ({
         contracts, productBundles: bundles, exceptions, fraudFlags, 
         complianceDocs, fieldIncidents: incidents, workReports, 
         attendanceRecords: attendance,
-        // Clear mock indicators now that we have real data
-        users: [], 
-        employees: [] 
+        users, employees 
       });
       
       // If we have a session, set current user

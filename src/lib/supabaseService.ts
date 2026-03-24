@@ -15,6 +15,12 @@ export const SupabaseService = {
     return profile ? snakeToCamel(profile) : null;
   },
 
+  async getUsers() {
+    const { data, error } = await supabase.from('users').select('*');
+    if (error) throw error;
+    return snakeToCamel(data) as any[];
+  },
+
   // --- PRODUCTS ---
   async getProducts() {
     const { data, error } = await supabase.from('products').select('*').eq('active', true);
@@ -296,6 +302,12 @@ export const SupabaseService = {
 
   async updateCompanySettings(companyId: string, settings: any) {
     await supabase.from('companies').update(camelToSnake(settings)).eq('id', companyId);
+  },
+
+  async getEmployees() {
+    const { data, error } = await supabase.from('employees').select('*, company:companies(*), user:users(*)');
+    if (error) throw error;
+    return snakeToCamel(data) as any[];
   },
 
   async getProductBundles() {
