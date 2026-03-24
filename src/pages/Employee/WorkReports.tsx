@@ -233,7 +233,8 @@ const WorkReports: React.FC = () => {
               backdropFilter: 'blur(40px)',
               padding: '1.5rem',
               display: 'flex',
-              flexDirection: 'column'
+              flexDirection: 'column',
+              overscrollBehavior: 'contain'
             }}
           >
             <header style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -278,6 +279,15 @@ const WorkReports: React.FC = () => {
                       <span style={{ fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Open Tactical Camera</span>
                     </>
                   )}
+                  <input 
+                    type="file" accept="image/*" capture="environment"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setImagePreview(URL.createObjectURL(e.target.files[0]));
+                      }
+                    }}
+                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }} 
+                  />
                 </motion.div>
                 
                 {/* Geofence Verification Block */}
@@ -314,15 +324,6 @@ const WorkReports: React.FC = () => {
                      </div>
                    )}
                 </div>
-                <input 
-                  type="file" accept="image/*" capture="environment"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      setImagePreview(URL.createObjectURL(e.target.files[0]));
-                    }
-                  }}
-                  style={{ position: 'absolute', top: '2.5rem', left: 0, width: '100%', height: 'calc(100% - 7rem)', opacity: 0, cursor: 'pointer', zIndex: 10 }} 
-                />
               </div>
 
               <div className="input-group">
