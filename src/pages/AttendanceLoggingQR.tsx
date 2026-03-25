@@ -15,7 +15,7 @@ const AttendanceLoggingQR: React.FC = () => {
   useEffect(() => {
     if (step === 'active' && mode === 'qr') {
       const token = generateUUID();
-      setQrToken(token);
+      queueMicrotask(() => setQrToken(token));
       const interval = setInterval(() => {
         setQrToken(generateUUID());
       }, 30000);

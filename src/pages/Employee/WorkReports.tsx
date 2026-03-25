@@ -237,32 +237,34 @@ const WorkReports: React.FC = () => {
       <AnimatePresence>
         {showForm && (
           <motion.div 
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
+            initial={{ opacity: 0, scale: 1.1 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
             className="scanner-overlay-immersive"
-            style={{ 
-              background: 'var(--bg-color)', 
-              backdropFilter: 'blur(40px)',
-              padding: '1.5rem',
-              display: 'flex',
-              flexDirection: 'column',
-              overscrollBehavior: 'contain'
-            }}
           >
-            <header style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Contextual Backdrop Blur */}
+            <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at top right, rgba(249, 115, 22, 0.1), transparent 40%)', zIndex: -1 }} />
+
+            <header style={{ padding: '2rem 1.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <Badge variant="primary" style={{ marginBottom: '0.5rem' }}>EVIDENCE CAPTURE</Badge>
-                <h2 style={{ fontSize: '1.8rem', fontWeight: 950, letterSpacing: '-0.04em', color: 'var(--text-main)' }}>Submit Report</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
+                  <div className="handshake-pulse" style={{ backgroundColor: 'var(--primary)' }} />
+                  <span style={{ fontSize: '0.7rem', fontWeight: 900, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--primary)' }}>EVIDENCE PROTOCOL</span>
+                </div>
+                <h2 style={{ fontSize: '2.2rem', fontWeight: 950, letterSpacing: '-0.05em', color: '#fff', margin: 0 }}>Submit Report</h2>
               </div>
-              <button onClick={() => setShowForm(false)} style={{ background: 'var(--surface-hover)', border: 'none', color: 'var(--text-muted)', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <LuX size={20} />
-              </button>
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setShowForm(false)} 
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', color: '#fff', width: '48px', height: '48px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)' }}
+              >
+                <LuX size={24} />
+              </motion.button>
             </header>
             
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2rem', overflowY: 'auto', padding: '0.5rem 0.5rem calc(130px + env(safe-area-inset-bottom, 20px)) 0.5rem' }} className="hide-scrollbar">
-              <div className="input-group" style={{ margin: 0 }}>
-                <label className="input-label" style={{ marginBottom: '1rem' }}>Photographic Evidence (Required)</label>
+            <div className="tactical-modal-scroll hide-scrollbar">
+              <section>
+                <label className="input-label" style={{ marginBottom: '1.25rem', opacity: 0.8, fontSize: '0.8rem' }}>PHOTOGRAPHIC PROOF (REQUIRED)</label>
                 <input 
                   type="file" accept="image/*" capture="environment"
                   ref={fileInputRef}
@@ -273,100 +275,103 @@ const WorkReports: React.FC = () => {
                   }}
                   style={{ display: 'none' }} 
                 />
+                
                 <motion.div 
+                  className="capture-portal"
                   whileTap={{ scale: 0.98 }}
                   onClick={() => fileInputRef.current?.click()}
-                  style={{ 
-                    aspectRatio: '1', 
-                    borderRadius: '32px', 
-                    background: 'rgba(var(--primary-rgb), 0.05)', 
-                    border: '2px dashed var(--border)', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    gap: '1rem', 
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    overflow: 'hidden',
-                    position: 'relative',
-                    boxShadow: 'inset 0 4px 24px rgba(0,0,0,0.06)'
-                  }}
                 >
                   {imagePreview ? (
-                    <img src={imagePreview} alt="Evidence" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <>
+                      <img src={imagePreview} alt="Evidence" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.4), transparent)' }} />
+                      <div className="laser-beam" />
+                    </>
                   ) : (
                     <>
-                      <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 30px var(--primary-glow)' }}>
-                        <LuCamera size={36} />
+                      <div className="scanner-reticle" />
+                      <div style={{ width: '90px', height: '90px', borderRadius: '50%', background: 'rgba(249, 115, 22, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(249, 115, 22, 0.2)', boxShadow: '0 0 40px rgba(249, 115, 22, 0.15)' }}>
+                        <LuCamera size={42} />
                       </div>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Open Tactical Camera</span>
+                      <div style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '1rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.15em', display: 'block', marginBottom: '4px' }}>Open Camera</span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.5, textTransform: 'uppercase' }}>SECURE CHANNEL READY</span>
+                      </div>
                     </>
                   )}
                 </motion.div>
                 
-                {/* Geofence Verification Block */}
-                <div style={{ marginTop: '1.5rem', padding: '1.5rem', borderRadius: '24px', background: locationVerified ? 'rgba(16, 185, 129, 0.05)' : 'var(--surface-hover)', border: locationVerified ? '1px solid var(--success)' : '1px solid var(--border)' }}>
+                {/* Tactical Verification Card */}
+                <div className="tactical-status-card" style={{ marginTop: '2rem' }}>
                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                         <div style={{ padding: '0.5rem', borderRadius: '10px', background: locationVerified ? 'var(--success-bg)' : 'var(--primary-glow)', color: locationVerified ? 'var(--success)' : 'white' }}>
-                            {locationVerified ? <LuShieldCheck size={20} /> : <LuMapPin size={20} />}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                         <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: locationVerified ? 'rgba(16, 185, 129, 0.1)' : 'rgba(249, 115, 22, 0.1)', color: locationVerified ? '#10b981' : 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid currentColor' }}>
+                            {locationVerified ? <LuShieldCheck size={24} /> : <LuMapPin size={24} />}
                          </div>
                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '0.9rem', fontWeight: 900, color: locationVerified ? 'var(--success)' : 'var(--text-main)' }}>
-                               {locationVerified ? 'Location Secured' : 'Site Verification'}
+                            <span style={{ fontSize: '0.95rem', fontWeight: 950, color: locationVerified ? '#10b981' : '#fff' }}>
+                               {locationVerified ? 'LOCATION SECURED' : 'SITE VERIFICATION'}
                             </span>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                               {locationVerified ? 'Geofence handshake complete' : 'Waiting for GPS telemetry...'}
+                            <span style={{ fontSize: '0.7rem', fontWeight: 700, opacity: 0.5, letterSpacing: '0.05em' }}>
+                               {locationVerified ? 'GEOSPATIAL HANDSHAKE COMPLETE' : 'AWAITING TELEMETRY LOCK'}
                             </span>
                          </div>
                       </div>
                       {!locationVerified && (
-                        <Button 
-                          variant="secondary" 
-                          size="sm" 
+                        <motion.button 
+                          whileTap={{ scale: 0.95 }}
                           onClick={verifyGeofence}
                           disabled={isVerifying}
-                          style={{ borderRadius: '12px' }}
+                          style={{ 
+                            background: 'var(--primary)', 
+                            color: '#fff', 
+                            border: 'none', 
+                            padding: '0.6rem 1.25rem', 
+                            borderRadius: '12px', 
+                            fontWeight: 900, 
+                            fontSize: '0.75rem',
+                            boxShadow: '0 10px 20px rgba(249, 115, 22, 0.3)'
+                          }}
                         >
-                          {isVerifying ? 'Pulse...' : 'Verify'}
-                        </Button>
+                          {isVerifying ? 'LOCKING...' : 'VERIFY'}
+                        </motion.button>
                       )}
                    </div>
                    {distError && (
-                     <div style={{ marginTop: '1rem', color: 'var(--primary-light)', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                        <LuInfo size={16} /> {distError}
+                     <div style={{ marginTop: '1.25rem', color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid var(--border-glass)' }}>
+                        <LuInfo size={16} className="text-primary" /> {distError}
                      </div>
                    )}
                 </div>
-              </div>
+              </section>
 
-              <div className="input-group">
-                <label className="input-label">Operational Remarks</label>
+              <div className="input-group" style={{ margin: 0 }}>
+                <label className="input-label" style={{ marginBottom: '1rem', opacity: 0.8, fontSize: '0.8rem' }}>OPERATIONAL REMARKS</label>
                 <textarea 
-                  placeholder="Describe the completed tasks or specific site conditions..."
+                  placeholder="Provide context for this evidence block..."
                   value={reportText}
                   onChange={(e) => setReportText(e.target.value)}
-                  className="input-field"
-                  style={{ minHeight: '160px', padding: '1.25rem', borderRadius: '24px' }}
+                  className="field-textarea"
+                  style={{ minHeight: '140px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: '28px' }}
                 />
               </div>
             </div>
 
-            <div style={{ padding: '1.25rem 0 calc(1.25rem + env(safe-area-inset-bottom, 20px))', background: 'var(--bg-color)', borderTop: '1px solid var(--border)', marginTop: 'auto' }}>
-               <Button 
+            <div style={{ padding: '1.5rem 1.75rem calc(1.5rem + env(safe-area-inset-bottom, 20px))', background: 'rgba(9,9,11,0.8)', backdropFilter: 'blur(20px)', borderTop: '1px solid var(--border-glass)', marginTop: 'auto' }}>
+               <motion.button 
+                whileTap={{ scale: 0.98 }}
                 onClick={handleReportSubmit}
                 disabled={isCapturing || !reportText || !imagePreview || !locationVerified}
-                variant="primary"
-                style={{ width: '100%', height: '64px', borderRadius: '24px', fontSize: '1.1rem', fontWeight: 950, boxShadow: '0 20px 40px var(--primary-glow)' }}
+                className="transmission-btn"
+                style={{ width: '100%' }}
               >
                 {isCapturing ? (
-                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
+                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}>
                     <LuClock size={24} />
                   </motion.div>
-                ) : <LuSend size={24} style={{ marginRight: '8px' }} />}
-                {isCapturing ? 'TRANSMITTING...' : 'UPLOAD EVIDENCE'}
-              </Button>
+                ) : <LuSend size={24} />}
+                {isCapturing ? 'TRANSMITTING EVIDENCE...' : 'UPLOAD TO ARCHIVE'}
+              </motion.button>
             </div>
           </motion.div>
         )}
