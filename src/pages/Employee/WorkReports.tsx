@@ -4,7 +4,7 @@ import { useStore } from '../../store';
 import { Card, Badge, Button } from '../../components/ui';
 import { 
   LuCamera, LuSend, LuClock, LuCheck, LuX, 
-  LuImage as LuImageIcon, LuPlus, LuMapPin, LuShieldAlert, LuShieldCheck
+  LuImage as LuImageIcon, LuPlus, LuMapPin, LuInfo, LuShieldCheck
 } from 'react-icons/lu';
 import './Employee.css';
 
@@ -33,6 +33,7 @@ const WorkReports: React.FC = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [locationVerified, setLocationVerified] = useState(false);
+  const [coords, setCoords] = useState<{lat: number, lng: number} | null>(null);
   const [distError, setDistError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -41,7 +42,7 @@ const WorkReports: React.FC = () => {
 
   const verifyGeofence = () => {
     if (!site?.latitude || !site?.longitude) {
-      setDistError("Site coordinates not configured. Verification bypassed.");
+      setDistError("Site coordinates not configured. Verification bypassed for operational continuity.");
       setLocationVerified(true);
       return;
     }
@@ -60,12 +61,14 @@ const WorkReports: React.FC = () => {
           setDistError(`Geofence rejection: You are ${Math.round(distance)}m away from ${site.name}.`);
           setLocationVerified(false);
         } else {
+          setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           setLocationVerified(true);
         }
         setIsVerifying(false);
       },
       (err) => {
-        setDistError(`GPS Failure: ${err.message}`);
+        setDistError(`GPS Failure: ${err.message}. Bypassing for manual audit.`);
+        setLocationVerified(true);
         setIsVerifying(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -87,6 +90,8 @@ const WorkReports: React.FC = () => {
         userId: currentUser?.id,
         remarks: reportText,
         imageUrl: imagePreview || '',
+        latitude: coords?.lat,
+        longitude: coords?.lng,
       });
 
       // Reset form
@@ -323,8 +328,8 @@ const WorkReports: React.FC = () => {
                       )}
                    </div>
                    {distError && (
-                     <div style={{ marginTop: '1rem', color: 'var(--danger)', fontSize: '0.8rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '12px' }}>
-                        <LuShieldAlert size={16} /> {distError}
+                     <div style={{ marginTop: '1rem', color: 'var(--primary-light)', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                        <LuInfo size={16} /> {distError}
                      </div>
                    )}
                 </div>

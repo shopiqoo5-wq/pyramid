@@ -425,8 +425,8 @@ export const useStore = create<AppState>()((set, get) => ({
   auditLogs: [],
   productBundles: mockBundles,
   locations: [
-    { id: '11111111-2222-4000-8000-000000000001', companyId: '11111111-1111-4111-8111-111111111111', name: 'HQ Mumbai', address: 'Bandra Kurla Complex', state: 'Maharashtra', defaultWarehouseId: 'w1' },
-    { id: '11111111-2222-4000-8000-000000000002', companyId: '22222222-2222-4222-8222-222222222222', name: 'Pune Factory', address: 'MIDC', state: 'Maharashtra', defaultWarehouseId: 'w1' }
+    { id: '11111111-2222-4000-8000-000000000001', companyId: '11111111-1111-4111-8111-111111111111', name: 'HQ Mumbai', address: 'Bandra Kurla Complex', state: 'Maharashtra', defaultWarehouseId: 'w1', latitude: 19.0760, longitude: 72.8777 },
+    { id: '11111111-2222-4000-8000-000000000002', companyId: '22222222-2222-4222-8222-222222222222', name: 'Pune Factory', address: 'MIDC', state: 'Maharashtra', defaultWarehouseId: 'w1', latitude: 18.5204, longitude: 73.8567 }
   ],
   notifications: [],
   contracts: [],

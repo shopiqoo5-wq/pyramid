@@ -389,6 +389,8 @@ export interface WorkReport {
   userId?: string;
   imageUrl: string;
   remarks: string;
+  latitude?: number;
+  longitude?: number;
   timestamp: string;
   status: 'pending' | 'approved' | 'rejected';
   approvedBy?: string; // supervisor_id

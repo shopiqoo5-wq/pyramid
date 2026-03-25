@@ -717,6 +717,8 @@ CREATE TABLE public.work_reports (
     location_id UUID REFERENCES public.locations(id),
     remarks TEXT NOT NULL,
     image_url TEXT,
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
