@@ -26,6 +26,8 @@ const EmployeeDashboard: React.FC = () => {
   const approveWorkReport = useStore(state => state.approveWorkReport);
   const rejectWorkReport = useStore(state => state.rejectWorkReport);
   const updateTaskProgress = useStore(state => state.updateTaskProgress);
+  const submittedChecklists = useStore(state => state.submittedChecklists);
+  const submitDailyChecklist = useStore(state => state.submitDailyChecklist);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showScanner, setShowScanner] = useState(false);
 
@@ -41,8 +43,10 @@ const EmployeeDashboard: React.FC = () => {
     a.status === 'active' && 
     (a.assignedRole === 'All' || a.assignedRole === role || a.assignedEmployeeId === employee?.id)
   );
-  const initialTasks = activeAssignments.map(a => a.title);
+  const today = new Date().toISOString().split('T')[0];
+  const initialTasks = activeAssignments.map(a => ({ id: a.id, title: a.title }));
   const completedTasks = (employee && dailyTaskProgress[employee.id]) || [];
+  const isSubmittedToday = employee && submittedChecklists[employee.id]?.startsWith(today);
 
   // Supervisor logic: Get pending reports for this location
   const pendingTeamReports = role === 'Supervisor' 
@@ -53,7 +57,6 @@ const EmployeeDashboard: React.FC = () => {
     : [];
 
   // Check if clocked in today
-  const today = new Date().toISOString().split('T')[0];
   const todaysAttendance = attendanceRecords.filter(r => 
     r.employeeId === employee?.id && r.checkIn.startsWith(today)
   );
@@ -64,11 +67,11 @@ const EmployeeDashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const toggleTask = (task: string) => {
-    if (!employee) return;
-    const newTasks = completedTasks.includes(task)
-      ? completedTasks.filter(t => t !== task)
-      : [...completedTasks, task];
+  const toggleTask = (taskId: string) => {
+    if (!employee || isSubmittedToday) return;
+    const newTasks = completedTasks.includes(taskId)
+      ? completedTasks.filter(t => t !== taskId)
+      : [...completedTasks, taskId];
     updateTaskProgress(employee.id, newTasks);
   };
 
@@ -324,35 +327,64 @@ const EmployeeDashboard: React.FC = () => {
             </span>
           </div>
         </div>
-        <div>
-          {initialTasks.map((task, idx) => (
+        <div style={{ padding: '0 0.5rem 1rem' }}>
+          {initialTasks.map((task) => (
             <div 
-              key={idx} 
+              key={task.id} 
               className="task-item-field"
-              onClick={() => toggleTask(task)}
-              style={{ cursor: 'pointer', background: completedTasks.includes(task) ? 'rgba(16, 185, 129, 0.05)' : 'transparent' }}
+              onClick={() => toggleTask(task.id)}
+              style={{ 
+                cursor: isSubmittedToday ? 'default' : 'pointer', 
+                background: completedTasks.includes(task.id) ? 'rgba(16, 185, 129, 0.05)' : 'transparent',
+                opacity: isSubmittedToday ? 0.7 : 1
+              }}
             >
               <div 
-                className={`task-checkbox-field ${completedTasks.includes(task) ? 'checked' : ''}`} 
+                className={`task-checkbox-field ${completedTasks.includes(task.id) ? 'checked' : ''}`} 
                 style={{ 
-                  background: completedTasks.includes(task) ? 'var(--success)' : 'transparent',
-                  borderColor: completedTasks.includes(task) ? 'var(--success)' : 'var(--border-strong)',
+                  background: completedTasks.includes(task.id) ? 'var(--success)' : 'transparent',
+                  borderColor: completedTasks.includes(task.id) ? 'var(--success)' : 'var(--border-strong)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}
               >
-                {completedTasks.includes(task) && <LuShieldCheck size={14} color="white" />}
+                {completedTasks.includes(task.id) && <LuShieldCheck size={14} color="white" />}
               </div>
               <span style={{ 
                 fontWeight: 600, 
-                opacity: completedTasks.includes(task) ? 0.4 : 0.9,
-                textDecoration: completedTasks.includes(task) ? 'line-through' : 'none'
+                opacity: completedTasks.includes(task.id) ? 0.4 : 0.9,
+                textDecoration: completedTasks.includes(task.id) ? 'line-through' : 'none',
+                color: 'var(--text-main)'
               }}>
-                {task}
+                {task.title}
               </span>
             </div>
           ))}
+
+          <div style={{ padding: '1.5rem 1rem 1rem' }}>
+            {!isSubmittedToday ? (
+              <button 
+                onClick={() => employee && submitDailyChecklist(employee.id)}
+                disabled={completedTasks.length < initialTasks.length}
+                className={`btn w-full btn-lg ${completedTasks.length === initialTasks.length ? 'btn-primary shadow-glow' : 'btn-secondary'}`}
+                style={{ borderRadius: '18px', gap: '0.75rem' }}
+              >
+                <LuSend size={20} />
+                {completedTasks.length === initialTasks.length ? 'FINALIZE & SUBMIT DAY' : `COMPLETE ALL TASKS (${completedTasks.length}/${initialTasks.length})`}
+              </button>
+            ) : (
+              <div className="glass-surface" style={{ padding: '1.25rem', borderRadius: '18px', textAlign: 'center', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                <div style={{ color: 'var(--success)', fontWeight: 950, fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem' }}>
+                  <LuShieldCheck size={20} />
+                  DAILY OPERATIONS CERTIFIED
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 800, marginTop: '4px', textTransform: 'uppercase' }}>
+                  Finalized on {new Date(submittedChecklists[employee?.id || '']).toLocaleTimeString()}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 

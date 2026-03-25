@@ -28,7 +28,7 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, onCancel, onComplete }) => {
-  const { locations } = useStore();
+  const { locations, isSupabaseConnected } = useStore();
   
   const [step, setStep] = useState<ScanStep>('requesting_permissions');
   const [errorMsg, setErrorMsg] = useState('');
@@ -175,8 +175,14 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, onCancel,
           );
 
           if (distance > 100) { // 100 meters strict radius
-            setErrorMsg(`Geofence rejection: Device is ${Math.round(distance)}m from target. Max allowed is 100m.`);
-            setStep('location_failed');
+            if (!isSupabaseConnected) {
+              console.warn(`DEV BYPASS: Geofence mismatch ignored (${Math.round(distance)}m). Mock Mode ACTIVE.`);
+              setGpsData({ lat: position.coords.latitude, lng: position.coords.longitude });
+              setStep('capturing_photo');
+            } else {
+              setErrorMsg(`Geofence rejection: Device is ${Math.round(distance)}m from target. Max allowed is 100m.`);
+              setStep('location_failed');
+            }
           } else {
             setGpsData({ lat: position.coords.latitude, lng: position.coords.longitude });
             setStep('capturing_photo');

@@ -23,7 +23,7 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 const WorkReports: React.FC = () => {
-  const { currentUser, workReports, employees, submitWorkReport, locations } = useStore();
+  const { currentUser, workReports, employees, submitWorkReport, locations, isSupabaseConnected } = useStore();
 
   const employee = employees.find(e => e.userId === currentUser?.id);
   const site = locations.find(l => l.id === employee?.locationId);
@@ -59,8 +59,13 @@ const WorkReports: React.FC = () => {
         );
 
         if (distance > 150) { // Slightly more lenient 150m for reports
-          setDistError(`Geofence rejection: You are ${Math.round(distance)}m away from ${site.name}.`);
-          setLocationVerified(false);
+          if (!isSupabaseConnected) {
+             setDistError(`Dev Bypass: Geofence mismatch ignored (${Math.round(distance)}m). Mock mode Active.`);
+             setLocationVerified(true);
+          } else {
+             setDistError(`Geofence rejection: You are ${Math.round(distance)}m away from ${site.name}.`);
+             setLocationVerified(false);
+          }
         } else {
           setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           setLocationVerified(true);
@@ -336,8 +341,8 @@ const WorkReports: React.FC = () => {
                       )}
                    </div>
                    {distError && (
-                     <div style={{ marginTop: '1rem', color: 'var(--primary-light)', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                        <LuInfo size={16} /> {distError}
+                     <div style={{ marginTop: '1rem', color: '#fff', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'var(--primary)', borderRadius: '16px', boxShadow: '0 8px 20px var(--primary-glow)' }}>
+                        <LuInfo size={18} /> {distError}
                      </div>
                    )}
                 </div>

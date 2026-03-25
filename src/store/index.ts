@@ -28,7 +28,8 @@ interface AppState {
   
   // App initialization
   initSupabase: () => Promise<void>;
-
+  isSupabaseConnected: boolean;
+  
   // Data
   users: User[];
   products: Product[];
@@ -228,7 +229,9 @@ interface AppState {
 
   // Workforce Tasks
   dailyTaskProgress: Record<string, string[]>; // employeeId -> task list
+  submittedChecklists: Record<string, string>; // employeeId -> ISO date of submission
   updateTaskProgress: (employeeId: string, tasks: string[]) => void;
+  submitDailyChecklist: (employeeId: string) => Promise<void>;
   reassignShift: (shiftId: string, locationId: string) => Promise<void>;
   addEmployeeShift: (shift: Omit<EmployeeShift, 'id'>) => Promise<void>;
   deleteEmployeeShift: (shiftId: string) => Promise<void>;
@@ -304,11 +307,12 @@ export const useStore = create<AppState>()((set, get) => ({
     addAlert({ message: 'Quotation successfully executed as Corporate Agreement!', type: 'success' });
   },
 
+  isSupabaseConnected: false,
   currentUser: null,
   login: async (companyIdentifier, userIdentifier, password) => {
     // 1. Try Supabase Auth
     try {
-      if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+      if (get().isSupabaseConnected) {
         const client = (await import('../lib/supabase')).supabase;
         const { data, error } = await client.auth.signInWithPassword({
           email: userIdentifier,
@@ -352,7 +356,7 @@ export const useStore = create<AppState>()((set, get) => ({
     return false;
   },
   logout: async () => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await (get() as any)._supabaseLogout();
     }
     get().addAlert({ message: 'Logged out successfully.', type: 'info' });
@@ -365,7 +369,19 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   initSupabase: async () => {
-    if (!import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) return;
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    if (!url || url.includes('YOUR_')) return;
+
+    // PERFORM REACHABILITY PROBE
+    const isReachable = await SupabaseService.checkConnection();
+    if (!isReachable) {
+       console.warn('⚠️ Supabase endpoint unreachable (Local/Remote). Falling back to Mock Ecosystem.');
+       set({ isSupabaseConnected: false });
+       return;
+    }
+
+    set({ isSupabaseConnected: true });
+
     try {
       const [
         products, companies, orders, locations, inventory, 
@@ -508,6 +524,7 @@ export const useStore = create<AppState>()((set, get) => ({
     }
   },
   dailyTaskProgress: {},
+  submittedChecklists: {},
   timeOffRequests: [],
   siteProtocols: [],
   customRoles: [
@@ -993,7 +1010,7 @@ export const useStore = create<AppState>()((set, get) => ({
       const hashedPassword = await hashPassword(password || 'pyramid123');
       const newUser = { ...rest, id: generateUUID(), username, password: hashedPassword, status: 'active' as const };
       
-      if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+      if (get().isSupabaseConnected) {
          await SupabaseService.addUser(newUser);
       }
 
@@ -1009,7 +1026,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const newBundle = { ...bundleStart, id: generateUUID() };
     logAction('admin', 'create_bundle', `Created new bundle: ${bundleStart.name} (${bundleStart.sku})`);
     
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.addProductBundle(newBundle);
     }
 
@@ -1021,7 +1038,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const bundle = productBundles.find(b => b.id === id);
     logAction('admin', 'update_bundle', `Updated bundle: ${bundle?.name || id}`);
     
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateProductBundle(id, updates);
     }
 
@@ -1035,7 +1052,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const bundle = productBundles.find(b => b.id === id);
     logAction('admin', 'delete_bundle', `Deleted bundle: ${bundle?.name || id}`);
     
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.deleteProductBundle(id);
     }
 
@@ -1144,7 +1161,7 @@ export const useStore = create<AppState>()((set, get) => ({
       return; // block role escalation
     }
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateUser(id, updates);
     }
     set((state) => ({
@@ -1178,7 +1195,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
     logAction('admin', 'delete_user', `Removed user: ${user.name} (${user.email})`);
     
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.deleteUser(id);
     }
 
@@ -1193,7 +1210,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const company = get().companies.find(c => c.id === locationStart.companyId);
     get().logAction('admin', 'create_location', `Added location ${locationStart.name} for ${company?.name || locationStart.companyId}`);
     
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       const newLoc = await SupabaseService.addLocation(locationStart);
       set((state) => ({ locations: [newLoc, ...state.locations] }));
     } else {
@@ -1207,7 +1224,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const company = companies.find(c => c.id === contractStart.companyId);
     logAction('admin', 'create_contract', `Established ${contractStart.type} contract for ${company?.name || 'unknown client'}.`);
     
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       const newContract = await SupabaseService.addContract(contractStart) as Contract;
       set(state => ({ contracts: [newContract, ...state.contracts] }));
     } else {
@@ -1217,7 +1234,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   deleteLocation: async (id) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.deleteLocation(id);
     }
     set((state) => ({
@@ -1226,7 +1243,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateLocation: async (id, updates) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateLocation(id, updates);
     }
     set((state) => ({
@@ -1236,7 +1253,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateContract: async (id, updates) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       const updated = await SupabaseService.updateContract(id, updates);
       set(state => ({
         contracts: state.contracts.map(c => c.id === id ? updated : c)
@@ -1249,7 +1266,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   deleteContract: async (id) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.deleteContract(id);
     }
     set((state) => ({
@@ -1268,7 +1285,7 @@ export const useStore = create<AppState>()((set, get) => ({
       newPricing.push({ id: generateUUID(), companyId, productId, negotiatedPrice: price });
     }
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.upsertClientPricing({
         companyId, productId, negotiatedPrice: price
       });
@@ -1331,7 +1348,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const product = get().products.find(p => p.id === productId); // Re-added this line as it was used below
     get().logAction(userId, 'inventory_adjustment', `Adjusted ${product?.name || productId} stock in ${warehouseId} by ${quantityDelta}. Reason: ${reason}`);
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       const item = get().inventory.find(i => i.productId === productId && i.warehouseId === warehouseId);
       if (item) {
         SupabaseService.updateStock(productId, warehouseId, quantityDelta).then();
@@ -1390,7 +1407,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   addBatch: async (batchStart) => {
     const newBatch: Batch = { ...batchStart, id: generateUUID() };
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.addBatch(newBatch);
     }
     set(state => ({ 
@@ -1470,7 +1487,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   triggerException: async (excStart) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.reportException(excStart);
     }
     const newExc: AppException = {
@@ -1489,7 +1506,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   resolveException: async (id) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.resolveException(id);
     }
     set(state => ({
@@ -1498,7 +1515,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   flagFraud: async (flagStart) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.flagFraud(flagStart);
     }
     const newFlag: FraudFlag = {
@@ -1517,7 +1534,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateFraudStatus: async (id, status) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateFraudStatus(id, status);
     }
     set(state => ({
@@ -1526,7 +1543,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   addComplianceDoc: async (docStart) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.addComplianceDoc(docStart);
     }
     const newDoc: ComplianceDoc = {
@@ -1539,7 +1556,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   deleteComplianceDoc: async (id) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.deleteComplianceDoc(id);
     }
     set(state => ({
@@ -1570,7 +1587,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const settledOrders = orders.filter(o => orderIds.includes(o.id));
     const totalSettled = settledOrders.reduce((sum, o) => sum + o.netAmount, 0);
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateOrdersPaid(orderIds, true);
       await SupabaseService.updateCompanyCredit(companyId, totalSettled);
     }
@@ -1596,7 +1613,7 @@ export const useStore = create<AppState>()((set, get) => ({
       return acc;
     }, {} as Record<string, number>);
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateOrdersPaid(orderIds, true);
       for (const [companyId, amount] of Object.entries(settlementByCompany)) {
         await SupabaseService.updateCompanyCredit(companyId, amount);
@@ -1616,7 +1633,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   markOrdersAsTallyExported: async (orderIds) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.markOrdersTallyExported(orderIds);
     }
     set((state) => ({
@@ -1641,7 +1658,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   addWebhook: async (webhookStart) => {
     const newWh = { ...webhookStart, id: generateUUID(), createdAt: new Date().toISOString() };
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.addWebhook(newWh);
     }
     set((state) => ({ webhooks: [newWh, ...state.webhooks] }));
@@ -1668,7 +1685,7 @@ export const useStore = create<AppState>()((set, get) => ({
       imageUrl: finalImageUrl,
       title: (incident as any).title || `${incident.type} Incident Reported`
     };
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.submitIncident(newIncident);
     }
     set(state => ({ fieldIncidents: [newIncident, ...state.fieldIncidents] }));
@@ -1676,7 +1693,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateIncidentStatus: async (id, status, adminRemarks) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateIncidentStatus(id, { status, adminRemarks });
     }
     set(state => ({
@@ -1694,7 +1711,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateWebhook: async (id, updates) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateWebhook(id, updates);
     }
     set((state) => ({ webhooks: state.webhooks.map(w => w.id === id ? { ...w, ...updates } : w) }));
@@ -1704,7 +1721,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const { webhooks, logAction } = get();
     const wh = webhooks.find(w => w.id === id);
     logAction('admin', 'delete_webhook', `Removed webhook: ${wh?.name || id}`);
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.deleteWebhook(id);
     }
     set((state) => ({ webhooks: state.webhooks.filter(w => w.id !== id) }));
@@ -1716,7 +1733,7 @@ export const useStore = create<AppState>()((set, get) => ({
     if (!webhook) return;
     const newActive = !webhook.active;
     logAction('admin', 'toggle_webhook', `${newActive ? 'Enabled' : 'Disabled'} webhook: ${webhook?.name || id}`);
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
        await SupabaseService.toggleWebhookActive(id, newActive);
     }
     set((state) => ({
@@ -1729,7 +1746,7 @@ export const useStore = create<AppState>()((set, get) => ({
       settings: { ...state.settings, ...newSettings }
     }));
     
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateSettings(newSettings);
     }
   },
@@ -1746,7 +1763,7 @@ export const useStore = create<AppState>()((set, get) => ({
       active: true,
       status: 'active'
     };
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.addQRToken(newToken);
     }
     set(state => ({ qrLogins: [newToken, ...state.qrLogins] }));
@@ -1755,7 +1772,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   revokeQRToken: async (id) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.revokeQRToken(id);
     }
     set(state => ({
@@ -1764,7 +1781,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   loginWithQR: async (token) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       const user = await SupabaseService.loginWithQR(token);
       if (user) {
         set({ currentUser: user });
@@ -1809,7 +1826,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
     const newUsers = await Promise.all(newUsersPromises);
     
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.bulkAddUsers(newUsers.map(u => {
         const { _plainPassword: _, ...rest } = u; // eslint-disable-line @typescript-eslint/no-unused-vars
         return rest;
@@ -1848,7 +1865,7 @@ export const useStore = create<AppState>()((set, get) => ({
       lastActionAt: new Date().toISOString()
     } as User;
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.addUser(newUser);
     }
     
@@ -1861,7 +1878,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateCompanyBranding: async (companyId, branding) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateCompanyBranding(companyId, branding);
     }
     set(state => ({
@@ -1870,7 +1887,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateCompanySettings: async (companyId, settings: Partial<Company>) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateCompanySettings(companyId, settings);
     }
     set(state => ({
@@ -1938,7 +1955,7 @@ export const useStore = create<AppState>()((set, get) => ({
       approvalChain: newChain
     };
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateOrderStatus(orderId, newStatus);
     }
 
@@ -1966,7 +1983,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateLocationBudget: async (locationId, budget) => {
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateLocationBudget(locationId, budget);
     }
     set(state => ({
@@ -2037,7 +2054,7 @@ export const useStore = create<AppState>()((set, get) => ({
       if (adminUser) newTicket.assignedTo = adminUser.id;
     }
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.createTicket(newTicket);
     }
 
@@ -2053,7 +2070,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const updatePayload: any = { status, updatedAt };
     if (assignedTo) updatePayload.assignedTo = assignedTo;
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.updateTicketStatus(id, updatePayload);
     }
     set(state => ({
@@ -2077,7 +2094,7 @@ export const useStore = create<AppState>()((set, get) => ({
     };
     if (imageUrl) newMessage.imageUrl = imageUrl;
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await SupabaseService.addTicketMessage(newMessage);
     }
     set(state => ({
@@ -2140,7 +2157,7 @@ export const useStore = create<AppState>()((set, get) => ({
       status: 'pending',
       imageUrl: finalImageUrl
     };
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (get().isSupabaseConnected) {
       await (SupabaseService as any).submitWorkReport?.(newReport);
     }
     set(state => ({ workReports: [newReport, ...state.workReports] }));
@@ -2198,7 +2215,7 @@ export const useStore = create<AppState>()((set, get) => ({
         set(state => ({
           attendanceRecords: state.attendanceRecords.map(r => r.id === activeRecord.id ? updated : r)
         }));
-        if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+        if (get().isSupabaseConnected) {
           await SupabaseService.updateAttendanceRecord(activeRecord.id, updated);
         }
       }
@@ -2218,7 +2235,7 @@ export const useStore = create<AppState>()((set, get) => ({
         metadata: metadata || {}
       };
       set(state => ({ attendanceRecords: [...state.attendanceRecords, newRecord] }));
-      if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+      if (get().isSupabaseConnected) {
         await SupabaseService.submitAttendance(newRecord);
       }
     }
@@ -2317,12 +2334,30 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateTaskProgress: (employeeId, tasks) => {
+    const today = new Date().toISOString().split('T')[0];
+    const submissionDate = get().submittedChecklists[employeeId];
+    if (submissionDate && submissionDate.startsWith(today)) {
+      get().addAlert({ message: 'Cannot modify a submitted checklist.', type: 'warning' });
+      return;
+    }
+
     set((state) => ({
       dailyTaskProgress: {
         ...state.dailyTaskProgress,
         [employeeId]: tasks
       }
     }));
+  },
+
+  submitDailyChecklist: async (employeeId) => {
+    const today = new Date().toISOString();
+    set(state => ({
+      submittedChecklists: {
+        ...state.submittedChecklists,
+        [employeeId]: today
+      }
+    }));
+    get().addAlert({ message: 'Daily Operations Checklist Submitted Successfully!', type: 'success' });
   },
 
   reassignShift: async (shiftId, locationId) => {

@@ -46,6 +46,7 @@ const WorkforceHub: React.FC = () => {
   const [punchType, setPunchType] = useState<'in' | 'out'>('in');
   const [punchEmpId, setPunchEmpId] = useState<string | null>(null);
   const [punchRemarks, setPunchRemarks] = useState('');
+  const [selectedEvidence, setSelectedEvidence] = useState<any | null>(null);
   const submitAttendance = useStore(state => state.submitAttendance);
   
   const [newEmp, setNewEmp] = useState(() => ({
@@ -283,8 +284,15 @@ const WorkforceHub: React.FC = () => {
                     <div style={{ position: 'absolute', left: '-2.4rem', top: '1.5rem', width: '12px', height: '12px', borderRadius: '50%', background: 'var(--success)', border: '3px solid var(--bg-color)', boxShadow: '0 0 10px var(--success)' }} />
                     <Card variant="premium" style={{ padding: '1.5rem', marginLeft: '1rem', border: '1px solid var(--border)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                        <div style={{ width: '64px', height: '64px', borderRadius: '16px', overflow: 'hidden', border: '2px solid var(--border)', flexShrink: 0 }}>
+                        <div 
+                          style={{ width: '64px', height: '64px', borderRadius: '16px', overflow: 'hidden', border: '2px solid var(--border)', flexShrink: 0, cursor: 'zoom-in', position: 'relative' }}
+                          onClick={() => setSelectedEvidence({ imageUrl: att.imageUrl, type: 'attendance', name: emp?.name, timestamp: activity.ts })}
+                          className="lift"
+                        >
                            <img src={att.imageUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Attendance" />
+                           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)', opacity: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}>
+                              <LuSearch color="#fff" size={20} />
+                           </div>
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
@@ -313,8 +321,15 @@ const WorkforceHub: React.FC = () => {
                     <div style={{ position: 'absolute', left: '-2.4rem', top: '1.5rem', width: '12px', height: '12px', borderRadius: '50%', background: 'var(--primary)', border: '3px solid var(--bg-color)', boxShadow: '0 0 10px var(--primary)' }} />
                     <Card variant="premium" style={{ padding: '1.5rem', marginLeft: '1rem', border: '1px solid var(--border)', background: 'linear-gradient(135deg, #1e293b, #0f172a)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                        <div style={{ width: '64px', height: '64px', borderRadius: '16px', overflow: 'hidden', border: '2px solid var(--border)', flexShrink: 0 }}>
+                        <div 
+                          style={{ width: '64px', height: '64px', borderRadius: '16px', overflow: 'hidden', border: '2px solid var(--border)', flexShrink: 0, cursor: 'zoom-in', position: 'relative' }}
+                          onClick={() => setSelectedEvidence({ imageUrl: rep.imageUrl, type: 'report', name: emp?.name, timestamp: activity.ts, remarks: rep.remarks })}
+                          className="lift"
+                        >
                            <img src={rep.imageUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Work Report" />
+                           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)', opacity: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}>
+                              <LuSearch color="#fff" size={20} />
+                           </div>
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
@@ -353,7 +368,11 @@ const WorkforceHub: React.FC = () => {
              <Table
                columns={[
                  { key: 'image', header: 'EVIDENCE', render: (report: any) => (
-                   <div style={{ width: '60px', height: '60px', borderRadius: '10px', overflow: 'hidden', border: '2px solid var(--border)', background: 'var(--surface-hover)' }}>
+                   <div 
+                     style={{ width: '60px', height: '60px', borderRadius: '10px', overflow: 'hidden', border: '2px solid var(--border)', background: 'var(--surface-hover)', cursor: 'zoom-in' }}
+                     onClick={(e) => { e.stopPropagation(); setSelectedEvidence({ ...report, type: 'report', name: employees.find(emp => emp.id === report.employeeId)?.name }); }}
+                     className="lift"
+                   >
                      <img src={report.imageUrl} alt="Work" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                    </div>
                  )},
@@ -386,6 +405,14 @@ const WorkforceHub: React.FC = () => {
                  )},
                  { key: 'actions', header: '', render: (report: any) => (
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                       <Button 
+                         variant="secondary" 
+                         size="sm" 
+                         onClick={(e) => { e.stopPropagation(); setSelectedEvidence({ ...report, type: 'report', name: employees.find(emp => emp.id === report.employeeId)?.name }); }}
+                         className="lift"
+                       >
+                         View
+                       </Button>
                       {report.status === 'pending' && (
                         <>
                           <Button 
@@ -932,6 +959,86 @@ const WorkforceHub: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* High-Resolution Evidence Lightbox */}
+      <Modal
+        isOpen={!!selectedEvidence}
+        onClose={() => setSelectedEvidence(null)}
+        title="Evidence Quality Inspection"
+        className="modal-xl"
+      >
+        {selectedEvidence && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ 
+              width: '100%', 
+              maxHeight: '70vh', 
+              borderRadius: '24px', 
+              overflow: 'hidden', 
+              background: '#000',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid var(--border)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+              position: 'relative'
+            }}>
+              <motion.img 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                src={selectedEvidence.imageUrl} 
+                alt="Evidence Detail" 
+                style={{ 
+                  maxWidth: '100%', 
+                  maxHeight: '70vh', 
+                  objectFit: 'contain',
+                  cursor: 'zoom-in',
+                  transition: 'transform 0.3s ease'
+                }} 
+                onClick={(e) => {
+                  const img = e.currentTarget;
+                  img.style.transform = img.style.transform === 'scale(1.5)' ? 'scale(1)' : 'scale(1.5)';
+                }}
+              />
+              <div style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'rgba(0,0,0,0.5)', padding: '0.5rem', borderRadius: '12px', color: '#fff', fontSize: '0.7rem', fontWeight: 900, backdropFilter: 'blur(10px)' }}>
+                CLICK PHOTO TO ZOOM
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr', gap: '2rem' }}>
+              <div className="glass-surface" style={{ padding: '1.5rem', borderRadius: '20px' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Field Remarks</div>
+                <p style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-main)', lineHeight: 1.5 }}>
+                   "{selectedEvidence.remarks || 'No operational notes provided.'}"
+                </p>
+              </div>
+
+              <div className="glass-surface" style={{ padding: '1.5rem', borderRadius: '20px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-muted)' }}>RECORD TYPE</span>
+                  <Badge variant={selectedEvidence.type === 'attendance' ? 'success' : 'primary'}>{selectedEvidence.type?.toUpperCase()}</Badge>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-muted)' }}>PERSONNEL</span>
+                  <span style={{ fontWeight: 800 }}>{selectedEvidence.name || 'Anonymous Operative'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-muted)' }}>TIMESTAMP</span>
+                  <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{new Date(selectedEvidence.timestamp || selectedEvidence.ts).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <Button variant="secondary" className="flex-1" onClick={() => setSelectedEvidence(null)}>Close Inspection</Button>
+              {selectedEvidence.status === 'pending' && (
+                <>
+                  <Button variant="danger" onClick={() => { useStore.getState().rejectWorkReport(selectedEvidence.id, 'admin'); setSelectedEvidence(null); }}>Reject Report</Button>
+                  <Button variant="primary" onClick={() => { useStore.getState().approveWorkReport(selectedEvidence.id, 'admin'); setSelectedEvidence(null); }}>Approve Evidence</Button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

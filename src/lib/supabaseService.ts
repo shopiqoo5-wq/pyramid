@@ -15,6 +15,24 @@ export const SupabaseService = {
     return profile ? snakeToCamel(profile) : null;
   },
 
+  async checkConnection() {
+    try {
+      // Lightweight check: just try to get the session/client health
+      const { error } = await supabase.from('users').select('id', { count: 'exact', head: true }).limit(1);
+      if (error) {
+        // If it's a network error (failed to fetch), the error won't even have a status
+        if (error.message?.includes('FetchError') || error.message?.includes('Failed to fetch')) {
+          return false;
+        }
+        // Other Postgres errors mean it IS reachable but maybe misconfigured
+        return true;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
   async getUsers() {
     const { data, error } = await supabase.from('users').select('*');
     if (error) throw error;
