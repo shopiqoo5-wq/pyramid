@@ -478,6 +478,17 @@ export const SupabaseService = {
       employee_id: report.employeeId || report.userId,
       location_id: report.locationId
     };
+
+    // Guard: Only proceed if mandatory identifiers are valid UUIDs
+    if (!isValidUUID(payload.user_id) || !isValidUUID(payload.employee_id) || (payload.location_id && !isValidUUID(payload.location_id))) {
+       console.warn('⚠️ Supabase sync skipped: Invalid UUID(s) detected in Work Report payload.', { 
+         user_id: payload.user_id, 
+         employee_id: payload.employee_id,
+         location_id: payload.location_id 
+       });
+       return; 
+    }
+
     if (payload.userId) delete payload.userId;
     if (payload.employeeId) delete payload.employeeId;
     if (payload.locationId) delete payload.locationId;
@@ -488,7 +499,18 @@ export const SupabaseService = {
   },
 
   async submitAttendance(record: any) {
-    const { error } = await supabase.from('attendance_records').insert(camelToSnake(record));
+    const payload = camelToSnake(record);
+    
+    // Guard: Only proceed if identifiers are valid UUIDs
+    if ((payload.employee_id && !isValidUUID(payload.employee_id)) || (payload.location_id && !isValidUUID(payload.location_id))) {
+      console.warn('⚠️ Supabase sync skipped: Invalid UUID(s) detected in Attendance record.', { 
+        employee_id: payload.employee_id, 
+        location_id: payload.location_id 
+      });
+      return;
+    }
+
+    const { error } = await supabase.from('attendance_records').insert(payload);
     if (error) throw error;
   },
 

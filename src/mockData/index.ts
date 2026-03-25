@@ -84,18 +84,18 @@ export const mockBundles: ProductBundle[] = [
 ];
 
 export const mockEmployees: Employee[] = [
-  { id: 'emp-001', userId: 'd2222222-4444-4444-8444-000000000002', name: 'Sameer Kumar', companyId: 'd4444444-6666-4666-8666-000000000004', locationId: '11111111-2222-4000-8000-000000000001', role: 'Cleaner' },
-  { id: 'emp-002', userId: 'd3333333-5555-4555-8555-000000000003', name: 'Vikram Singh', companyId: 'd4444444-6666-4666-8666-000000000004', locationId: '11111111-2222-4000-8000-000000000001', role: 'Supervisor' }
+  { id: 'e1111111-1111-4111-8111-000000000001', userId: 'd2222222-4444-4444-8444-000000000002', name: 'Sameer Kumar', companyId: 'd4444444-6666-4666-8666-000000000004', locationId: '11111111-2222-4000-8000-000000000001', role: 'Cleaner' },
+  { id: 'e2222222-2222-4222-8222-000000000002', userId: 'd3333333-5555-4555-8555-000000000003', name: 'Vikram Singh', companyId: 'd4444444-6666-4666-8666-000000000004', locationId: '11111111-2222-4000-8000-000000000001', role: 'Supervisor' }
 ];
 
 export const mockAttendance: AttendanceRecord[] = [
-  { id: 'att-001', employeeId: 'emp-001', checkIn: new Date(Date.now() - 3600000).toISOString(), imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop' }
+  { id: 'att-001', employeeId: 'e1111111-1111-4111-8111-000000000001', checkIn: new Date(Date.now() - 3600000).toISOString(), imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop' }
 ];
 
 export const mockWorkReports: WorkReport[] = [
   { 
     id: 'rep-001', 
-    employeeId: 'emp-001', 
+    employeeId: 'e1111111-1111-4111-8111-000000000001', 
     imageUrl: 'https://images.unsplash.com/photo-1584820927498-cafe8c160826?w=200&h=200&fit=crop', 
     remarks: 'Main lobby area sanitized.', 
     timestamp: new Date().toISOString(),
