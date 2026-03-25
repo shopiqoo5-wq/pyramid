@@ -1,71 +1,112 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { LuQrCode, LuScanLine, LuX, LuCheck } from 'react-icons/lu';
+import { LuScanLine, LuX, LuCheck } from 'react-icons/lu';
 import { Card, Button } from '../../components/ui';
 
 const QRCodeScanner: React.FC = () => {
   const navigate = useNavigate();
   const { products, addToCart, currentUser, locations } = useStore();
-   const [scanning, setScanning] = useState(true);
-   const [scannedProduct, setScannedProduct] = useState<any>(null);
-   const [scanMode, setScanMode] = useState<'reorder' | 'attendance'>('reorder');
-   const [attendanceSuccess, setAttendanceSuccess] = useState(false);
-   const [manualInput, setManualInput] = useState('');
+  const [scanning, setScanning] = useState(true);
+  const [scannedProduct, setScannedProduct] = useState<any>(null);
+  const [scanMode, setScanMode] = useState<'reorder' | 'attendance'>('reorder');
+  const [attendanceSuccess, setAttendanceSuccess] = useState(false);
+  const [manualInput, setManualInput] = useState('');
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const qrRegionId = "portal-qr-reader";
 
-    const handleProcessScan = useCallback((data: string) => {
-      setScanning(false);
-      const cleanData = data.trim();
-      
-      if (cleanData.startsWith('p:')) {
-        const productId = cleanData.replace('p:', '');
-        const product = products.find(p => p.id === productId || p.sku === productId);
-        if (product) {
-          navigate(`/portal/scan-result?sku=${product.sku}`);
-        } else {
-          alert(`Product not found: ${productId}`);
-          setScanning(true);
-        }
-      } else if (cleanData.startsWith('att:')) {
-        const locationId = cleanData.replace('att:', '');
-        const location = locations.find(l => l.id === locationId);
-        if (location) {
-          navigate(`/portal/attendance?locationId=${locationId}`);
-        } else {
-          alert('Invalid Attendance Terminal');
-          setScanning(true);
-        }
+  const handleProcessScan = useCallback((data: string) => {
+    setScanning(false);
+    const cleanData = data.trim();
+    
+    if (cleanData.startsWith('p:')) {
+      const productId = cleanData.replace('p:', '');
+      const product = products.find(p => p.id === productId || p.sku === productId);
+      if (product) {
+        navigate(`/portal/scan-result?sku=${product.sku}`);
       } else {
-        // Smart Fallback: ID -> SKU -> Location
-        const productById = products.find(p => p.id === cleanData);
-        const productBySku = products.find(p => p.sku === cleanData);
-        
-        if (productById || productBySku) {
-          const product = productById || productBySku;
-          if (product) navigate(`/portal/scan-result?sku=${product.sku}`);
+        alert(`Product not found: ${productId}`);
+        setScanning(true);
+      }
+    } else if (cleanData.startsWith('att:')) {
+      const locationId = cleanData.replace('att:', '');
+      const location = locations.find(l => l.id === locationId);
+      if (location) {
+        navigate(`/portal/attendance?locationId=${locationId}`);
+      } else {
+        alert('Invalid Attendance Terminal');
+        setScanning(true);
+      }
+    } else {
+      // Smart Fallback: ID -> SKU -> Location
+      const productById = products.find(p => p.id === cleanData);
+      const productBySku = products.find(p => p.sku === cleanData);
+      
+      if (productById || productBySku) {
+        const product = productById || productBySku;
+        if (product) navigate(`/portal/scan-result?sku=${product.sku}`);
+      } else {
+        const loc = locations.find(l => l.id === cleanData);
+        if (loc) {
+          navigate(`/portal/attendance?locationId=${cleanData}`);
         } else {
-          const loc = locations.find(l => l.id === cleanData);
-          if (loc) {
-            navigate(`/portal/attendance?locationId=${cleanData}`);
-          } else {
-            alert('Unrecognized QR Format. This token might be legacy or from a different system.');
-            setScanning(true);
-          }
+          alert('Unrecognized QR Format. This token might be legacy or from a different system.');
+          setScanning(true);
         }
       }
-    }, [products, locations, navigate]);
- 
-   // Reset timer on manual scan simulation
-   useEffect(() => {
-     let timer: number;
-     if (scanning && !manualInput) {
-       timer = setTimeout(() => {
-         // Default demo behavior if no interaction
-         handleProcessScan(scanMode === 'reorder' ? `p:${products[0]?.id || 'p1'}` : `att:${currentUser?.locationId || 'l1'}`);
-       }, 5000);
-     }
-     return () => clearTimeout(timer);
-    }, [scanning, manualInput, handleProcessScan, scanMode, products, currentUser]);
+    }
+  }, [products, locations, navigate]);
+
+  // REAL CAMERA INTEGRATION
+  useEffect(() => {
+    let isMounted = true;
+    if (scanning && !manualInput) {
+      const startScanner = async () => {
+        try {
+          const scanner = new Html5Qrcode(qrRegionId);
+          scannerRef.current = scanner;
+          
+          await scanner.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (decodedText) => {
+              if (isMounted) handleProcessScan(decodedText);
+            },
+            () => {} // Ignore errors
+          );
+        } catch (err: any) {
+          console.error('Portal scanner failed:', err);
+          // Fallback to simulated behavior after 10s if camera fails
+          setTimeout(() => {
+            if (isMounted && scanning) {
+               handleProcessScan(scanMode === 'reorder' ? `p:${products[0]?.id || 'p1'}` : `att:${currentUser?.locationId || 'l1'}`);
+            }
+          }, 10000);
+        }
+      };
+
+      const timer = setTimeout(() => {
+        if (document.getElementById(qrRegionId)) {
+          startScanner();
+        } else {
+          // Retry logic for React mounting delays
+          const retry = setTimeout(() => {
+            if (isMounted && document.getElementById(qrRegionId)) startScanner();
+          }, 500);
+          return () => clearTimeout(retry);
+        }
+      }, 300);
+
+      return () => {
+        isMounted = false;
+        clearTimeout(timer);
+        if (scannerRef.current?.isScanning) {
+          scannerRef.current.stop().catch(() => {});
+        }
+      };
+    }
+  }, [scanning, manualInput, handleProcessScan, scanMode, products, currentUser]);
 
   const handleAddToCart = () => {
     if (scannedProduct) {
@@ -109,11 +150,11 @@ const QRCodeScanner: React.FC = () => {
       <Card style={{ padding: '2rem', textAlign: 'center', minHeight: '400px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
         
         {scanning ? (
-          <div className="scanner-animation" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem' }}>
-            <div style={{ position: 'relative', width: '250px', height: '250px', border: '2px solid var(--primary)', borderRadius: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-              <LuQrCode size={180} color="var(--border)" style={{ opacity: 0.3 }} />
+          <div className="scanner-animation" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem', width: '100%' }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '300px', aspectRatio: '1/1', background: '#000', borderRadius: '1rem', overflow: 'hidden' }}>
+              <div id={qrRegionId} style={{ width: '100%', height: '100%' }} />
               
-              {/* Scan Line Animation - styled inline for simplicity, ideally in CSS */}
+              {/* Scan Line Overlay */}
               <div style={{
                 position: 'absolute',
                 top: 0,
@@ -122,7 +163,8 @@ const QRCodeScanner: React.FC = () => {
                 height: '4px',
                 background: 'var(--primary)',
                 boxShadow: '0 0 10px var(--primary)',
-                animation: 'scan 2.5s infinite linear'
+                animation: 'scan 2.5s infinite linear',
+                zIndex: 10
               }} />
               <style>{`
                 @keyframes scan {

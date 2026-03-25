@@ -37,6 +37,7 @@ const WorkReports: React.FC = () => {
   const [distError, setDistError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
@@ -93,7 +94,7 @@ const WorkReports: React.FC = () => {
         imageUrl: imagePreview || '',
         latitude: coords?.lat,
         longitude: coords?.lng,
-      });
+      }, imageFile || undefined);
 
       // Reset form
       setShowForm(false);
@@ -102,8 +103,7 @@ const WorkReports: React.FC = () => {
       setDistError(null);
       setLocationVerified(false);
     } catch (error: any) {
-      console.error('Submission error:', error);
-      alert(`Submission failed: ${error.message || 'Unknown protocol error'}`);
+      setDistError(error.message || 'Transmission protocols disrupted. Retry required.');
     } finally {
       setIsCapturing(false);
     }
@@ -268,7 +268,9 @@ const WorkReports: React.FC = () => {
                   ref={fileInputRef}
                   onChange={(e) => {
                     if (e.target.files && e.target.files[0]) {
-                      setImagePreview(URL.createObjectURL(e.target.files[0]));
+                      const file = e.target.files[0];
+                      setImageFile(file);
+                      setImagePreview(URL.createObjectURL(file));
                     }
                   }}
                   style={{ display: 'none' }} 

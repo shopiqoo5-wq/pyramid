@@ -80,8 +80,23 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, onCancel,
             { fps: 10, qrbox: { width: 250, height: 250 } },
             (decodedText) => {
               try {
-                const payload = JSON.parse(decodedText);
-                if (payload.type === 'geofence_auth' && payload.locationId && payload.token) {
+                // Support both JSON and New Colon-delimited format
+                let payload: any = null;
+                
+                if (decodedText.startsWith('{')) {
+                  payload = JSON.parse(decodedText);
+                } else if (decodedText.startsWith('pyramid-fm-punch:')) {
+                  const parts = decodedText.split(':');
+                  if (parts.length === 3) {
+                    payload = {
+                      type: 'geofence_auth',
+                      token: parts[1],
+                      locationId: parts[2]
+                    };
+                  }
+                }
+
+                if (payload && payload.locationId && payload.token) {
                   scanner.stop().then(() => {
                     if (isMounted) {
                        setScannedData(payload);
@@ -89,8 +104,8 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, onCancel,
                     }
                   });
                 }
-              } catch {
-                // Ignore invalid QR codes
+              } catch (e) {
+                console.error('Scan parse error:', e);
               }
             },
             () => {} // Ignore errors
@@ -104,8 +119,17 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, onCancel,
       };
       
       const timer = setTimeout(() => {
-        startScanner();
-      }, 300); // Slight delay for mount
+        // Double check if element exists (to prevent Html5Qrcode error)
+        if (document.getElementById(qrRegionId)) {
+          startScanner();
+        } else {
+          // Retry if not in DOM yet (due to AnimatePresence delay)
+          const retryTimer = setTimeout(() => {
+            if (document.getElementById(qrRegionId)) startScanner();
+          }, 500);
+          return () => clearTimeout(retryTimer);
+        }
+      }, 300); // Initial slight delay for mount
       
       return () => {
         isMounted = false;

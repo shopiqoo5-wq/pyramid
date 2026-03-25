@@ -206,22 +206,23 @@ interface AppState {
   addEmployee: (employee: Omit<Employee, 'id'>) => Promise<void>;
   updateEmployee: (id: string, updates: Partial<Employee>) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
-  submitWorkReport: (report: Omit<WorkReport, 'id' | 'timestamp' | 'status'>) => Promise<void>;
+  submitWorkReport: (report: Omit<WorkReport, 'id' | 'timestamp' | 'status'>, file?: File) => Promise<void>;
   approveWorkReport: (reportId: string, supervisorId: string) => Promise<void>;
   rejectWorkReport: (reportId: string, supervisorId: string) => Promise<void>;
   submitTimeOffRequest: (request: Omit<TimeOffRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   updateTimeOffStatus: (id: string, status: TimeOffRequest['status'], adminRemarks?: string) => Promise<void>;
-  submitAttendance: (record: { employeeId: string; imageUrl: string; checkOut?: string; locationId?: string; type?: 'in' | 'out'; latitude?: number; longitude?: number; metadata?: any }) => Promise<void>;
+  submitAttendance: (record: { employeeId: string; imageUrl: string; checkOut?: string; locationId?: string; type?: 'in' | 'out'; latitude?: number; longitude?: number; metadata?: any }, isBase64?: boolean) => Promise<void>;
   updateAttendanceRecord: (id: string, updates: Partial<AttendanceRecord>) => void;
   deleteAttendanceRecord: (id: string) => void;
   createManualTimesheet: (record: Omit<AttendanceRecord, 'id'>) => void;
 
   // Phase 49: GPS & QR Management
   generateLocationQR: (locationId: string) => void;
+  rotateLocationToken: (locationId: string) => void;
   updateLocationCoordinates: (locationId: string, latitude: number, longitude: number) => void;
   
   // Phase 38 Actions
-  submitIncident: (incident: Omit<FieldIncident, 'id' | 'timestamp' | 'status'>) => Promise<void>;
+  submitIncident: (incident: Omit<FieldIncident, 'id' | 'timestamp' | 'status'>, file?: File) => Promise<void>;
   updateIncidentStatus: (id: string, status: FieldIncident['status'], adminRemarks?: string) => Promise<void>;
   updateShiftStatus: (id: string, status: EmployeeShift['status']) => Promise<void>;
 
@@ -1646,12 +1647,25 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({ webhooks: [newWh, ...state.webhooks] }));
   },
 
-  submitIncident: async (incident) => {
+  submitIncident: async (incident, file) => {
+    let finalImageUrl = incident.imageUrl || '';
+    
+    // Hardening Section: If a real file is provided, upload it to Supabase Storage
+    if (file && import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+      try {
+        const path = `incidents/${generateUUID()}-${file.name}`;
+        finalImageUrl = await SupabaseService.uploadFile('incidents', path, file);
+      } catch (e) {
+        get().addAlert({ message: 'Incident evidence upload failed. Metadata persisted locally.', type: 'error' });
+      }
+    }
+
     const newIncident: FieldIncident = {
       ...incident,
       id: generateUUID(),
       timestamp: new Date().toISOString(),
       status: 'Open',
+      imageUrl: finalImageUrl,
       title: (incident as any).title || `${incident.type} Incident Reported`
     };
     if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
@@ -2106,15 +2120,27 @@ export const useStore = create<AppState>()((set, get) => ({
     set(state => ({ employees: state.employees.filter(e => e.id !== id) }));
   },
 
-  submitWorkReport: async (report) => {
+  submitWorkReport: async (report, file) => {
+    let finalImageUrl = report.imageUrl || '';
+
+    // Hardening Section: Handle real file uploads for persistent work evidence
+    if (file && import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+      try {
+        const path = `work-reports/${generateUUID()}-${file.name}`;
+        finalImageUrl = await SupabaseService.uploadFile('work-reports', path, file);
+      } catch (e) {
+        get().addAlert({ message: 'Work evidence transmission failed. Data stored in local session.', type: 'error' });
+      }
+    }
+
     const newReport: WorkReport = {
       ...report,
       id: generateUUID(),
       timestamp: new Date().toISOString(),
-      status: 'pending'
+      status: 'pending',
+      imageUrl: finalImageUrl
     };
     if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
-      // Assuming a generic add method for reports or specific one
       await (SupabaseService as any).submitWorkReport?.(newReport);
     }
     set(state => ({ workReports: [newReport, ...state.workReports] }));
@@ -2137,11 +2163,23 @@ export const useStore = create<AppState>()((set, get) => ({
     get().addAlert({ message: 'Report Rejected.', type: 'info' });
   },
 
-  submitAttendance: async (record) => {
+  submitAttendance: async (record, isBase64) => {
     const { employeeId, locationId, imageUrl, checkOut, type, latitude, longitude, metadata } = record;
     const isOut = !!checkOut || type === 'out';
     const matchScore = metadata?.faceMatchScore || 100;
     const timestamp = new Date().toISOString();
+    let finalImageUrl = imageUrl;
+
+    // Hardening Section: Convert Base64 identity captures to persistent Storage Blobs
+    if (isBase64 && imageUrl.startsWith('data:') && import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+      try {
+        const blob = SupabaseService.base64ToBlob(imageUrl);
+        const path = `attendance/${employeeId}-${Date.now()}.jpg`;
+        finalImageUrl = await SupabaseService.uploadFile('attendance', path, blob);
+      } catch (e) {
+        get().addAlert({ message: 'Identity photo persistence failed. Manual verification required.', type: 'error' });
+      }
+    }
 
     if (isOut) {
       const activeRecord = get().attendanceRecords.find(r => r.employeeId === employeeId && !r.checkOut);
@@ -2150,7 +2188,8 @@ export const useStore = create<AppState>()((set, get) => ({
           ...activeRecord,
           checkOut: checkOut || timestamp,
           type: 'out',
-          photoUrl: imageUrl,
+          photoUrl: finalImageUrl,
+          imageUrl: finalImageUrl,
           latitude,
           longitude,
           status: matchScore >= 90 ? 'verified' : 'pending',
@@ -2168,8 +2207,8 @@ export const useStore = create<AppState>()((set, get) => ({
         id: generateUUID(),
         employeeId,
         locationId,
-        imageUrl,
-        photoUrl: imageUrl,
+        imageUrl: finalImageUrl,
+        photoUrl: finalImageUrl,
         type: 'in',
         latitude,
         longitude,
@@ -2199,6 +2238,15 @@ export const useStore = create<AppState>()((set, get) => ({
       )
     }));
     get().addAlert({ message: 'Secure Site QR code generated.', type: 'success' });
+  },
+
+  rotateLocationToken: (locationId) => {
+    const token = generateUUID();
+    set(state => ({
+      locations: state.locations.map(loc => 
+        loc.id === locationId ? { ...loc, qrToken: token, qrStatus: 'active' } : loc
+      )
+    }));
   },
 
   updateLocationCoordinates: (locationId, latitude, longitude) => {

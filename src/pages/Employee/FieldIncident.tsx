@@ -18,11 +18,14 @@ const FieldIncident: React.FC = () => {
   const [isTransmitting, setIsTransmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setImagePreview(URL.createObjectURL(e.target.files[0]));
+      const file = e.target.files[0];
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
     }
   };
 
@@ -44,12 +47,11 @@ const FieldIncident: React.FC = () => {
         description,
         title: `${severity} ${type} Incident`,
         imageUrl: imagePreview || 'https://images.unsplash.com/photo-1581094794329-c8112a89af12?auto=format&fit=crop&q=80&w=800'
-      });
+      }, imageFile || undefined);
 
       setSubmitted(true);
     } catch (err: any) {
-      console.error('Failed to transmit incident', err);
-      setError(err.message || 'Operation failed. Verify connectivity.');
+      setError(err.message || 'Critical transmission failure. Verify link status.');
     } finally {
       setIsTransmitting(false);
     }

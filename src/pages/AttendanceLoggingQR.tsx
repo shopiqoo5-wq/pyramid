@@ -1,27 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { QRCodeCanvas } from 'qrcode.react';
 import { useStore } from '../store';
 import { Button, Card } from '../components/ui';
 import { LuCamera, LuQrCode, LuShieldCheck, LuMapPin, LuLogOut, LuClock, LuUserCheck } from 'react-icons/lu';
-import { generateUUID } from '../lib/supabaseUtils';
 
 const AttendanceLoggingQR: React.FC = () => {
   const { locations, addAlert } = useStore();
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [mode, setMode] = useState<'kiosk' | 'qr'>('kiosk');
   const [step, setStep] = useState<'select' | 'active'>('select');
-  const [qrToken, setQrToken] = useState<string>('');
+
+  const rotateLocationToken = useStore(state => state.rotateLocationToken);
 
   useEffect(() => {
-    if (step === 'active' && mode === 'qr') {
-      const token = generateUUID();
-      queueMicrotask(() => setQrToken(token));
+    if (step === 'active' && mode === 'qr' && selectedLocation) {
+      // 1. Initial Rotate
+      rotateLocationToken(selectedLocation);
+      
+      // 2. Continuous Rotation (Silent)
       const interval = setInterval(() => {
-        setQrToken(generateUUID());
+        rotateLocationToken(selectedLocation);
       }, 30000);
       return () => clearInterval(interval);
     }
-  }, [step, mode]);
+  }, [step, mode, selectedLocation, rotateLocationToken]);
 
   const location = locations.find(l => l.id === selectedLocation);
 
@@ -101,19 +104,29 @@ const AttendanceLoggingQR: React.FC = () => {
       <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4rem' }}>
         {mode === 'qr' ? (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ padding: '3rem', background: '#fff', borderRadius: '50px', boxShadow: '0 40px 100px rgba(0,0,0,0.1)', marginBottom: '3rem', position: 'relative' }}>
-              <div style={{ width: '400px', height: '400px', background: '#f8f9fa', borderRadius: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ border: '20px solid #000', width: '300px', height: '300px', position: 'relative' }}>
-                    <div style={{ position: 'absolute', top: 30, left: 30, right: 30, bottom: 30, border: '10px solid #000' }} />
-                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100px', height: '100px', background: 'var(--primary)', borderRadius: '20px', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 950, fontSize: '2rem' }}>P</div>
-                </div>
+            <div style={{ padding: '3.5rem', background: '#fff', borderRadius: '50px', boxShadow: '0 40px 100px rgba(0,0,0,0.1)', marginBottom: '3rem', position: 'relative', display: 'inline-block' }}>
+              <div style={{ background: '#fff', borderRadius: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', border: '1px solid #f1f5f9' }}>
+                <QRCodeCanvas 
+                  value={`pyramid-fm-punch:${location?.qrToken}:${location?.id}`}
+                  size={350}
+                  level="H"
+                  includeMargin={true}
+                  imageSettings={{
+                    src: "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/shield-check.svg",
+                    x: undefined,
+                    y: undefined,
+                    height: 48,
+                    width: 48,
+                    excavate: true,
+                  }}
+                />
               </div>
               <motion.div 
                 animate={{ scale: [1, 1.05, 1] }} 
                 transition={{ repeat: Infinity, duration: 2 }}
-                style={{ position: 'absolute', bottom: '-20px', left: '50%', transform: 'translateX(-50%)', background: 'var(--primary)', color: 'white', padding: '0.75rem 2rem', borderRadius: '20px', fontWeight: 900, fontSize: '0.9rem', boxShadow: '0 10px 30px var(--primary-glow)' }}
+                style={{ position: 'absolute', bottom: '-20px', left: '50%', transform: 'translateX(-50%)', background: 'var(--primary)', color: 'white', padding: '0.75rem 2rem', borderRadius: '20px', fontWeight: 900, fontSize: '0.9rem', boxShadow: '0 10px 30px var(--primary-glow)', whiteSpace: 'nowrap' }}
               >
-                TOKEN REFRESHING... {qrToken.slice(0, 4)}
+                LIVE SECURE TOKEN: {location?.qrToken?.slice(0, 8).toUpperCase()}
               </motion.div>
             </div>
             <h1 style={{ fontSize: '3rem', fontWeight: 950, letterSpacing: '-0.04em', marginBottom: '1rem' }}>Scan to Log Attendance</h1>

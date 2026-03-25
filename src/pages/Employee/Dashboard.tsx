@@ -82,7 +82,7 @@ const EmployeeDashboard: React.FC = () => {
       locationId: data.locationId,
       latitude: data.latitude,
       longitude: data.longitude
-    });
+    }, true);
     setShowScanner(false);
   };
 

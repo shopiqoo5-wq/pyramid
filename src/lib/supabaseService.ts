@@ -443,10 +443,11 @@ export const SupabaseService = {
 
     // Guard: Only proceed if user_id and location_id are valid UUIDs
     if (!isValidUUID(payload.user_id) || (payload.locationId && !isValidUUID(payload.locationId))) {
-       console.warn('⚠️ Supabase sync skipped: Invalid UUID(s) detected in payload.', { 
-         user_id: payload.user_id, 
-         location_id: payload.locationId 
-       });
+       this.reportException({ 
+         type: 'System Sync Data Mismatch',
+         severity: 'low',
+         description: `Supabase sync skipped: Invalid UUID(s) in Incident. user_id: ${payload.user_id}, location_id: ${payload.locationId}`
+       }).catch(() => {});
        return; 
     }
     // Remove individual properties that are now mapped
@@ -481,11 +482,11 @@ export const SupabaseService = {
 
     // Guard: Only proceed if mandatory identifiers are valid UUIDs
     if (!isValidUUID(payload.user_id) || !isValidUUID(payload.employee_id) || (payload.location_id && !isValidUUID(payload.location_id))) {
-       console.warn('⚠️ Supabase sync skipped: Invalid UUID(s) detected in Work Report payload.', { 
-         user_id: payload.user_id, 
-         employee_id: payload.employee_id,
-         location_id: payload.location_id 
-       });
+       this.reportException({ 
+         type: 'System Sync Data Mismatch',
+         severity: 'low',
+         description: `Supabase sync skipped: Invalid UUID(s) in Work Report. user_id: ${payload.user_id}, employee_id: ${payload.employee_id}, location_id: ${payload.location_id}`
+       }).catch(() => {});
        return; 
     }
 
@@ -503,10 +504,11 @@ export const SupabaseService = {
     
     // Guard: Only proceed if identifiers are valid UUIDs
     if ((payload.employee_id && !isValidUUID(payload.employee_id)) || (payload.location_id && !isValidUUID(payload.location_id))) {
-      console.warn('⚠️ Supabase sync skipped: Invalid UUID(s) detected in Attendance record.', { 
-        employee_id: payload.employee_id, 
-        location_id: payload.location_id 
-      });
+      this.reportException({ 
+        type: 'System Sync Data Mismatch',
+        severity: 'low',
+        description: `Supabase sync skipped: Invalid UUID(s) in Attendance. employee_id: ${payload.employee_id}, location_id: ${payload.location_id}`
+      }).catch(() => {});
       return;
     }
 
@@ -613,5 +615,28 @@ export const SupabaseService = {
   async deleteWorkAssignment(id: string) {
     const { error } = await supabase.from('work_assignments').delete().eq('id', id);
     if (error) throw error;
+  },
+
+  // --- STORAGE & UTILS ---
+  async uploadFile(bucket: string, path: string, file: File | Blob) {
+    const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
+      cacheControl: '3600',
+      upsert: true
+    });
+    if (error) throw error;
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
+    return publicUrl;
+  },
+
+  base64ToBlob(base64: string, type: string = 'image/jpeg') {
+    const binStr = atob(base64.split(',')[1]);
+    const len = binStr.length;
+    const arr = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      arr[i] = binStr.charCodeAt(i);
+    }
+    return new Blob([arr], { type });
   }
 };

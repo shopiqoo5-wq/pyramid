@@ -7,8 +7,10 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const isValidUrl = rawUrl.startsWith('http://') || rawUrl.startsWith('https://');
 const supabaseUrl = isValidUrl ? rawUrl : 'https://placeholder.supabase.co';
 
-if (!isValidUrl || !supabaseAnonKey) {
-  console.warn('Supabase credentials are not set or are invalid. Using mock placeholder data.');
+if (!isValidUrl || !supabaseAnonKey || rawUrl.includes('YOUR_')) {
+  console.warn('⚡ Supabase: Using Mock Data. (Credentials missing or placeholder detected in .env)');
+} else {
+  console.log('🔗 Supabase: Connection established to ' + rawUrl);
 }
 
 export const supabase = createClient(
