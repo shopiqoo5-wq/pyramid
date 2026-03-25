@@ -387,6 +387,7 @@ export interface WorkReport {
   id: string; // report_id
   employeeId: string;
   userId?: string;
+  locationId?: string;
   imageUrl: string;
   remarks: string;
   latitude?: number;

@@ -88,6 +88,7 @@ const WorkReports: React.FC = () => {
       await submitWorkReport({
         employeeId: employee.id,
         userId: currentUser?.id,
+        locationId: employee.locationId,
         remarks: reportText,
         imageUrl: imagePreview || '',
         latitude: coords?.lat,
@@ -98,6 +99,11 @@ const WorkReports: React.FC = () => {
       setShowForm(false);
       setReportText('');
       setImagePreview(null);
+      setDistError(null);
+      setLocationVerified(false);
+    } catch (error: any) {
+      console.error('Submission error:', error);
+      alert(`Submission failed: ${error.message || 'Unknown protocol error'}`);
     } finally {
       setIsCapturing(false);
     }

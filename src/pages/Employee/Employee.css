@@ -280,13 +280,19 @@
 /* ── OVERLAYS ── */
 .scanner-overlay-immersive {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100vh;
+  height: 100dvh;
   background: var(--bg-color);
-  z-index: 3000;
+  z-index: 5000;
   display: flex;
   flex-direction: column;
-  padding: 1.5rem;
+  padding: env(safe-area-inset-top, 1rem) 1.5rem env(safe-area-inset-bottom, 1rem) 1.5rem;
   color: var(--text-main);
+  overflow: hidden;
 }
 
 .scan-frame-container {

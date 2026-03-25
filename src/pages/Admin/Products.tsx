@@ -18,7 +18,7 @@ import { Card, Button, Table, Input } from '../../components/ui';
 import { Modal } from '../../components/ui/Modal';
 import BulkImportModal from './BulkImportModal';
 import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
-import { generateMasterQRCodeCatalogPDF } from '../../lib/pdfGenerator';
+// generateMasterQRCodeCatalogPDF is now imported dynamically in the click handler.
 import { supabase } from '../../lib/supabase';
 
 const AdminProducts: React.FC = () => {
@@ -162,6 +162,7 @@ const AdminProducts: React.FC = () => {
           <Button 
             variant="secondary" 
             onClick={async () => {
+              const { generateMasterQRCodeCatalogPDF } = await import('../../lib/pdfGenerator');
               const items = products.map(p => {
                 const img = document.getElementById(`qr-gen-${p.id}`) as HTMLCanvasElement;
                 return {

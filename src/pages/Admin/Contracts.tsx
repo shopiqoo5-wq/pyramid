@@ -17,7 +17,8 @@ import {
   LuRefreshCw,
   LuUserPlus
 } from 'react-icons/lu';
-import { generateQuotationPDF } from '../../lib/pdfGenerator';
+// Static import removed to fix INEFFECTIVE_DYNAMIC_IMPORT warning.
+// generateQuotationPDF is now imported dynamically within the action handler.
 
 const Contracts: React.FC = () => {
   const { companies, products, contracts, quotations, settings, addContract, updateContract, deleteContract, addQuotation, updateQuotationStatus, convertToContract } = useStore();
@@ -298,7 +299,18 @@ const Contracts: React.FC = () => {
                 header: '', 
                 render: (r: any) => (
                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                    <Button size="sm" variant="ghost" className="lift" style={{ border: '1px solid var(--border)' }} onClick={() => generateQuotationPDF(r, companies.find(c => c.id === r.companyId), products, settings)}><LuDownload size={14} /></Button>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="lift" 
+                      style={{ border: '1px solid var(--border)' }} 
+                      onClick={async () => {
+                        const { generateQuotationPDF } = await import('../../lib/pdfGenerator');
+                        generateQuotationPDF(r, companies.find(c => c.id === r.companyId), products, settings);
+                      }}
+                    >
+                      <LuDownload size={14} />
+                    </Button>
                     {r.status === 'Accepted' && (
                        <Button size="sm" variant="primary" className="lift" onClick={() => convertToContract(r.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.7rem' }}><LuRefreshCw size={12} /> Convert to SLA</Button>
                     )}
