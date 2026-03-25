@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { snakeToCamel, camelToSnake } from './supabaseUtils';
+import { snakeToCamel, camelToSnake, isValidUUID } from './supabaseUtils';
 import type { Product, Order, Company, InventoryItem } from '../types';
 
 export const SupabaseService = {
@@ -440,6 +440,15 @@ export const SupabaseService = {
       user_id: incident.userId || incident.employeeId, // Fallback to employeeId if userId missing
       title: incident.title || `${incident.type} Incident Reported`
     };
+
+    // Guard: Only proceed if user_id and location_id are valid UUIDs
+    if (!isValidUUID(payload.user_id) || (payload.locationId && !isValidUUID(payload.locationId))) {
+       console.warn('⚠️ Supabase sync skipped: Invalid UUID(s) detected in payload.', { 
+         user_id: payload.user_id, 
+         location_id: payload.locationId 
+       });
+       return; 
+    }
     // Remove individual properties that are now mapped
     if (payload.userId) delete payload.userId;
     if (payload.employeeId) delete payload.employeeId;

@@ -6,15 +6,15 @@ export const mockCompanies: Company[] = [
   { id: '11111111-1111-4111-8111-111111111111', name: 'Alpha Corp (Gold Tier)', companyCode: 'ALPHA', gstNumber: '27AABBCC1234F1Z1', pointOfContact: 'John Doe', creditLimit: 50000, availableCredit: 45000, status: 'active' },
   { id: '22222222-2222-4222-8222-222222222222', name: 'Beta Industries (Standard)', companyCode: 'BETA', gstNumber: '27XYZABC8765G2Y2', pointOfContact: 'Jane Smith', creditLimit: 100000, availableCredit: 12000, status: 'active' },
   { id: '33333333-3333-4333-8333-333333333333', name: 'Gamma Enterprises (Platinum)', companyCode: 'GAMMA', gstNumber: '29ASDFGH9876Q3W3', pointOfContact: 'Robert Chen', creditLimit: 250000, availableCredit: 250000, status: 'active' },
-  { id: 'pyramid-workforce-001', name: 'Pyramid Workforce', companyCode: 'PYRAMID', gstNumber: '27PYRAMID1234F1Z1', pointOfContact: 'Operations Manager', creditLimit: 0, availableCredit: 0, status: 'active' }
+  { id: 'd4444444-6666-4666-8666-000000000004', name: 'Pyramid Workforce', companyCode: 'PYRAMID', gstNumber: '27PYRAMID1234F1Z1', pointOfContact: 'Operations Manager', creditLimit: 0, availableCredit: 0, status: 'active' }
 ];
 
 export const mockUsers: User[] = [
-  { id: 'master-001', name: 'Pyramid FMS Master', email: 'master@pyramidfms.com', phone: '9999988888', role: 'admin', password: mockHash('master2026'), status: 'active' },
+  { id: 'd1111111-3333-4333-8333-000000000001', name: 'Pyramid FMS Master', email: 'master@pyramidfms.com', phone: '9999988888', role: 'admin', password: mockHash('master2026'), status: 'active' },
   { id: '11111111-0000-4000-8000-000000000001', name: 'Admin Sameer', email: 'admin@pyramidfm.com', phone: '9876543210', role: 'admin', password: mockHash('admin123'), status: 'active' },
   { id: '11111111-0000-4000-8000-000000000002', name: 'John Doe', email: 'john@alphacorp.com', phone: '9123456780', role: 'client_manager', companyId: '11111111-1111-4111-8111-111111111111', password: mockHash('pass123'), status: 'active' },
-  { id: 'employee-001', name: 'Sameer Employee', email: 'sameer@pyramidfm.com', phone: '9876543211', role: 'employee', companyId: 'pyramid-workforce-001', password: mockHash('emp123'), status: 'active' },
-  { id: 'supervisor-001', name: 'Vikram Supervisor', email: 'vikram@pyramidfm.com', phone: '9876543212', role: 'employee', companyId: 'pyramid-workforce-001', password: mockHash('sup123'), status: 'active' }
+  { id: 'd2222222-4444-4444-8444-000000000002', name: 'Sameer Employee', email: 'sameer@pyramidfm.com', phone: '9876543211', role: 'employee', companyId: 'd4444444-6666-4666-8666-000000000004', password: mockHash('emp123'), status: 'active' },
+  { id: 'd3333333-5555-4555-8555-000000000003', name: 'Vikram Supervisor', email: 'vikram@pyramidfm.com', phone: '9876543212', role: 'employee', companyId: 'd4444444-6666-4666-8666-000000000004', password: mockHash('sup123'), status: 'active' }
 ];
 
 export const mockProducts: Product[] = [
@@ -84,8 +84,8 @@ export const mockBundles: ProductBundle[] = [
 ];
 
 export const mockEmployees: Employee[] = [
-  { id: 'emp-001', userId: 'employee-001', name: 'Sameer Kumar', companyId: 'pyramid-workforce-001', locationId: '11111111-2222-4000-8000-000000000001', role: 'Cleaner' },
-  { id: 'emp-002', userId: 'supervisor-001', name: 'Vikram Singh', companyId: 'pyramid-workforce-001', locationId: '11111111-2222-4000-8000-000000000001', role: 'Supervisor' }
+  { id: 'emp-001', userId: 'd2222222-4444-4444-8444-000000000002', name: 'Sameer Kumar', companyId: 'd4444444-6666-4666-8666-000000000004', locationId: '11111111-2222-4000-8000-000000000001', role: 'Cleaner' },
+  { id: 'emp-002', userId: 'd3333333-5555-4555-8555-000000000003', name: 'Vikram Singh', companyId: 'd4444444-6666-4666-8666-000000000004', locationId: '11111111-2222-4000-8000-000000000001', role: 'Supervisor' }
 ];
 
 export const mockAttendance: AttendanceRecord[] = [
