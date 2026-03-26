@@ -329,6 +329,18 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
+-- HELPER: Check Role (Breaks RLS Recursion)
+CREATE OR REPLACE FUNCTION public.is_admin() 
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.users 
+    WHERE id = auth.uid() 
+    AND role = 'admin'::public.user_role
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 -- TRIGGER: Credit Guard (Real-time checks)
 CREATE OR REPLACE FUNCTION public.validate_company_credit()
 RETURNS TRIGGER AS $$
@@ -363,7 +375,10 @@ ALTER TABLE public.field_incidents ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Read Access" ON public.products FOR SELECT USING (true);
 CREATE POLICY "Public Read Access" ON public.companies FOR SELECT USING (true);
 CREATE POLICY "Authenticated Write Orders" ON public.orders FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-CREATE POLICY "Users Own Access" ON public.users FOR SELECT USING (auth.uid() = id);
+
+-- USERS POLICIES (Hardened against recursion)
+CREATE POLICY "Admins full access" ON public.users FOR ALL USING (public.is_admin());
+CREATE POLICY "Users see own profile" ON public.users FOR SELECT USING (auth.uid() = id);
 
 -- STORAGE POLICIES
 CREATE POLICY "Public Read Storage" ON storage.objects FOR SELECT USING (true);
