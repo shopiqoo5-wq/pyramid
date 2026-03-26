@@ -328,8 +328,8 @@ export const useStore = create<AppState>()((set, get) => ({
           }
         }
       }
-    } catch (e: any) {
-      console.warn('Supabase login failed, falling back to mock:', e.message);
+    } catch (_e: any) {
+      console.warn('Supabase login failed, falling back to mock:', _e.message);
     }
 
     // 2. Fallback to mock logic (same as before)
@@ -387,8 +387,13 @@ export const useStore = create<AppState>()((set, get) => ({
         const data = await fetcher();
         setter(data);
         console.log(`✅ Synced: ${label}`);
-      } catch (err) {
-        console.error(`❌ Sync Failed [${label}]:`, err);
+      } catch (err: any) {
+        // PostgREST/PostgreSQL Error 42P01 = Undefined Table
+        if (err.code === '42P01') {
+          console.error(`❌ Table Missing [${label}]: This table does not exist in your Supabase project. Please run the setup script in 'supabase/unified_schema.sql' in your Supabase SQL Editor.`);
+        } else {
+          console.error(`❌ Sync Failed [${label}]:`, err.message || err);
+        }
       }
     };
 
@@ -422,7 +427,7 @@ export const useStore = create<AppState>()((set, get) => ({
         set({ currentUser });
         console.log(`👤 Auth Verified: ${currentUser.name}`);
       }
-    } catch (e) {
+    } catch (_e) {
       console.warn('Current user verification skipped.');
     }
   },
@@ -971,8 +976,8 @@ export const useStore = create<AppState>()((set, get) => ({
         set((state) => ({ companies: [{ ...companyStart, id: generateUUID() } as Company, ...state.companies] }));
       }
       get().addAlert({ message: 'Company registry finalized.', type: 'success' });
-    } catch (err: any) {
-      get().addAlert({ message: `Failed to add company: ${err.message}`, type: 'error' });
+    } catch (_e: any) {
+      get().addAlert({ message: `Failed to add company: ${_e.message}`, type: 'error' });
     }
   },
 
@@ -1668,7 +1673,7 @@ export const useStore = create<AppState>()((set, get) => ({
       try {
         const path = `incidents/${generateUUID()}-${file.name}`;
         finalImageUrl = await SupabaseService.uploadFile('incidents', path, file);
-      } catch (e) {
+      } catch (_e) {
         get().addAlert({ message: 'Incident evidence upload failed. Metadata persisted locally.', type: 'error' });
       }
     }
@@ -2200,7 +2205,7 @@ export const useStore = create<AppState>()((set, get) => ({
         const blob = SupabaseService.base64ToBlob(imageUrl);
         const path = `attendance/${employeeId}-${Date.now()}.jpg`;
         finalImageUrl = await SupabaseService.uploadFile('attendance', path, blob);
-      } catch (e) {
+      } catch (_e) {
         get().addAlert({ message: 'Identity photo persistence failed. Manual verification required.', type: 'error' });
       }
     }

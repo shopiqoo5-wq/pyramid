@@ -46,5 +46,32 @@ INSERT INTO public.attendance_records (id, employee_id, check_in, photo_url, typ
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.work_reports (id, user_id, employee_id, remarks, image_url, status) VALUES
-('r1111111-1111-4111-8111-000000000001', 'd2222222-4444-4444-8444-000000000002', 'e1111111-1111-4111-8111-000000000001', 'Main lobby area sanitized.', 'https://images.unsplash.com/photo-1584820927498-cafe8c160826?w=200&h=200&fit=crop', 'pending')
+('e1111111-1111-4111-8111-000000000001', 'd2222222-4444-4444-8444-000000000002', 'e1111111-1111-4111-8111-000000000001', 'Main lobby area sanitized.', 'https://images.unsplash.com/photo-1584820927498-cafe8c160826?w=200&h=200&fit=crop', 'pending')
+ON CONFLICT (id) DO NOTHING;
+
+-- 7. CUSTOM ROLES
+INSERT INTO public.custom_roles (id, name, permissions, is_system) VALUES
+('c1111111-1111-4111-8111-000000000001', 'Lead Janitor', '{inventory:read, attendance:write, reports:write}', false),
+('c1111111-1111-4111-8111-000000000002', 'Site Supervisor', '{inventory:all, attendance:all, reports:all, roles:read}', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 8. WORK ASSIGNMENTS
+INSERT INTO public.work_assignments (id, title, description, assigned_role, recurrence) VALUES
+('81111111-1111-4111-8111-000000000001', 'Daily Lobby Sanitization', 'Disinfect door handles and kiosks', 'All', 'daily'),
+('81111111-1111-4111-8111-000000000002', 'Washroom Deep Clean', 'Check all soap dispensers and floors', 'All', 'daily'),
+('81111111-1111-4111-8111-000000000003', 'Inventory Stock Take', 'Monthly check of onsite cleaning supplies', 'Lead Janitor', 'monthly')
+ON CONFLICT (id) DO NOTHING;
+
+-- 9. SITE PROTOCOLS
+INSERT INTO public.site_protocols (id, location_id, title, steps) VALUES
+('91111111-1111-4111-8111-000000000001', '11111111-2222-4000-8000-000000000001', 'Bio-Hazard Response', '{"1. Secure perimeter", "2. Notify supervisor", "3. Apply PPE", "4. Sanitize area"}')
+ON CONFLICT (id) DO NOTHING;
+
+-- 10. SAMPLE ORDERS (For UI Vibe Check)
+INSERT INTO public.orders (id, custom_id, company_id, location_id, placed_by, status, total_amount, gst_amount, net_amount) VALUES
+('o1111111-1111-4111-8111-000000000001', 'ORD-20240326-001', '11111111-1111-4111-8111-111111111111', '11111111-2222-4000-8000-000000000001', '11111111-0000-4000-8000-000000000002', 'pending', 500.00, 90.00, 590.00)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.order_items (order_id, product_id, quantity, unit_price, gst_amount, total) VALUES
+('o1111111-1111-4111-8111-000000000001', '11111111-1111-4000-8000-000000000001', 2, 250.00, 90.00, 590.00)
 ON CONFLICT (id) DO NOTHING;

@@ -28,7 +28,7 @@ export const SupabaseService = {
         return true;
       }
       return true;
-    } catch (e) {
+    } catch (_e: any) {
       return false;
     }
   },
