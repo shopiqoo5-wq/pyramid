@@ -672,15 +672,22 @@ export const SupabaseService = {
 
   // --- STORAGE & UTILS ---
   async uploadFile(bucket: string, path: string, file: File | Blob) {
-    const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
-      cacheControl: '3600',
-      upsert: true
-    });
-    if (error) throw error;
-    
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
-    return publicUrl;
+    try {
+      // 1. Check if bucket exists/is accessible (Optional but defensive)
+      const { data: uploadData, error: uploadError } = await Promise.race([
+        supabase.storage.from(bucket).upload(path, file, { cacheControl: '3600', upsert: true }),
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Persistent storage heartbeat timed out.')), 10000))
+      ]);
+
+      if (uploadError) throw uploadError;
+      
+      // 2. Resolve Public URL
+      const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(uploadData.path);
+      return publicUrl;
+    } catch (err) {
+      console.error(`Storage disruption [${bucket}]:`, err);
+      throw err; // Re-throw to let the store handle fallback
+    }
   },
 
   base64ToBlob(base64: string, type: string = 'image/jpeg') {

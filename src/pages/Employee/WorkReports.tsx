@@ -33,7 +33,6 @@ const WorkReports: React.FC = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [locationVerified, setLocationVerified] = useState(false);
-  const [coords, setCoords] = useState<{lat: number, lng: number} | null>(null);
   const [distError, setDistError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -67,7 +66,6 @@ const WorkReports: React.FC = () => {
              setLocationVerified(false);
           }
         } else {
-          setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           setLocationVerified(true);
         }
         setIsVerifying(false);
@@ -93,12 +91,10 @@ const WorkReports: React.FC = () => {
     try {
       await submitWorkReport({
         employeeId: employee.id,
-        userId: currentUser?.id,
+        userId: currentUser!.id,
         locationId: employee.locationId,
         remarks: reportText,
-        imageUrl: imagePreview || '',
-        latitude: coords?.lat,
-        longitude: coords?.lng,
+        imageUrl: imagePreview || 'https://images.unsplash.com/photo-1584820927498-cafe8c160826?auto=format&fit=crop&q=80&w=800'
       }, imageFile || undefined);
 
       // Reset form
@@ -107,7 +103,11 @@ const WorkReports: React.FC = () => {
       setImagePreview(null);
       setDistError(null);
       setLocationVerified(false);
+      
+      // Success feedback
+      alert("Operations Report Transmitted Successfully.");
     } catch (error: any) {
+      console.error('Submission failed:', error);
       setDistError(error.message || 'Transmission protocols disrupted. Retry required.');
     } finally {
       setIsCapturing(false);

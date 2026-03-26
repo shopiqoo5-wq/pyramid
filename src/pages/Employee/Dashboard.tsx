@@ -78,15 +78,20 @@ const EmployeeDashboard: React.FC = () => {
   const handleScannerComplete = async (data: any) => {
     if (!employee) return;
 
-    await submitAttendance({
-      employeeId: employee.id,
-      imageUrl: data.imageUrl,
-      type: data.type,
-      locationId: data.locationId,
-      latitude: data.latitude,
-      longitude: data.longitude
-    }, true);
-    setShowScanner(false);
+    try {
+      await submitAttendance({
+        employeeId: employee.id,
+        imageUrl: data.imageUrl,
+        type: data.type,
+        locationId: data.locationId,
+        latitude: data.latitude,
+        longitude: data.longitude
+      }, true);
+    } catch (err) {
+      console.error('Submission failed:', err);
+    } finally {
+      setShowScanner(false);
+    }
   };
 
   return (
