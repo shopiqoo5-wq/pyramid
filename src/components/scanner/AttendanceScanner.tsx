@@ -175,8 +175,8 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, onCancel,
           );
 
           if (distance > 100) { // 100 meters strict radius
-            if (!isSupabaseConnected) {
-              console.warn(`DEV BYPASS: Geofence mismatch ignored (${Math.round(distance)}m). Mock Mode ACTIVE.`);
+            if (!isSupabaseConnected || import.meta.env.VITE_BYPASS_GEOFENCE === 'true') {
+              console.warn(`GEOFENCE BYPASS ACTIVE: (${Math.round(distance)}m).`);
               setGpsData({ lat: position.coords.latitude, lng: position.coords.longitude });
               setStep('capturing_photo');
             } else {
@@ -319,9 +319,21 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, onCancel,
                 </div>
               )}
 
-              <Button onClick={() => setStep('requesting_permissions')} variant="secondary" style={{ padding: '0 2rem' }}>
-                <LuRefreshCcw style={{ marginRight: '0.5rem' }} /> Retry Authorization
-              </Button>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <Button onClick={() => setStep('requesting_permissions')} variant="secondary">
+                  <LuRefreshCcw style={{ marginRight: '0.5rem' }} /> Retry
+                </Button>
+                <Button 
+                  onClick={() => {
+                    setGpsData({ lat: 0, lng: 0 }); // Mock coords for bypass
+                    setStep('capturing_photo');
+                  }} 
+                  variant="ghost"
+                  style={{ border: '1px solid var(--danger)', color: 'var(--danger)' }}
+                >
+                  Bypass (Testing)
+                </Button>
+              </div>
             </motion.div>
           )}
 

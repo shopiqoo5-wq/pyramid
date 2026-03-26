@@ -270,7 +270,14 @@ const SupportDesk: React.FC = () => {
              </div>
            </div>
 
-           <Button variant="primary" onClick={handleCreate} style={{ marginTop: '0.5rem', fontWeight: 800 }}>Confirm Submission</Button>
+           <Button 
+             variant="primary" 
+             onClick={handleCreate} 
+             disabled={!newTicket.title || !newTicket.description}
+             style={{ marginTop: '0.5rem', fontWeight: 800 }}
+           >
+             Confirm Submission
+           </Button>
         </div>
       </Modal>
 

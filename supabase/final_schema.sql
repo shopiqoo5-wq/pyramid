@@ -498,9 +498,16 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_company_modtime ON public.companies;
 CREATE TRIGGER update_company_modtime BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
+
+DROP TRIGGER IF EXISTS update_user_modtime ON public.users;
 CREATE TRIGGER update_user_modtime BEFORE UPDATE ON public.users FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
+
+DROP TRIGGER IF EXISTS update_order_modtime ON public.orders;
 CREATE TRIGGER update_order_modtime BEFORE UPDATE ON public.orders FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
+
+DROP TRIGGER IF EXISTS update_ticket_modtime ON public.support_tickets;
 CREATE TRIGGER update_ticket_modtime BEFORE UPDATE ON public.support_tickets FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
 
 -- AUTH SYNC: Create public.users profile on signup
@@ -621,23 +628,52 @@ ALTER TABLE public.recurring_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recurring_order_items ENABLE ROW LEVEL SECURITY;
 
 -- ADMIN POLICIES (Bypass for admin role)
+DROP POLICY IF EXISTS "Admin full access companies" ON public.companies;
 CREATE POLICY "Admin full access companies" ON public.companies FOR ALL USING ( (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin' );
+
+DROP POLICY IF EXISTS "Admin full access users" ON public.users;
 CREATE POLICY "Admin full access users" ON public.users FOR ALL USING ( (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin' );
+
+DROP POLICY IF EXISTS "Admin full access products" ON public.products;
 CREATE POLICY "Admin full access products" ON public.products FOR ALL USING ( (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin' );
+
+DROP POLICY IF EXISTS "Admin full access orders" ON public.orders;
 CREATE POLICY "Admin full access orders" ON public.orders FOR ALL USING ( (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin' );
+
+DROP POLICY IF EXISTS "Admin full access inventory" ON public.inventory;
 CREATE POLICY "Admin full access inventory" ON public.inventory FOR ALL USING ( (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin' );
 
 -- PUBLIC READ (Vibe check/Registration)
+DROP POLICY IF EXISTS "Public read products" ON public.products;
 CREATE POLICY "Public read products" ON public.products FOR SELECT USING (TRUE);
+
+DROP POLICY IF EXISTS "Public read settings" ON public.global_settings;
 CREATE POLICY "Public read settings" ON public.global_settings FOR SELECT USING (TRUE);
+
+DROP POLICY IF EXISTS "Public read qr" ON public.qr_logins;
 CREATE POLICY "Public read qr" ON public.qr_logins FOR SELECT USING (active = TRUE);
 
 -- USER SPECIFIC
+DROP POLICY IF EXISTS "Users view own profile" ON public.users;
 CREATE POLICY "Users view own profile" ON public.users FOR SELECT USING ( id = auth.uid() );
+
+DROP POLICY IF EXISTS "Users view ELIGIBLE company" ON public.companies;
 CREATE POLICY "Users view ELIGIBLE company" ON public.companies FOR SELECT USING ( id = (SELECT company_id FROM public.users WHERE id = auth.uid()) );
+
+DROP POLICY IF EXISTS "Users view company locations" ON public.locations;
 CREATE POLICY "Users view company locations" ON public.locations FOR SELECT USING ( company_id = (SELECT company_id FROM public.users WHERE id = auth.uid()) );
+
+DROP POLICY IF EXISTS "Users view company orders" ON public.orders;
 CREATE POLICY "Users view company orders" ON public.orders FOR SELECT USING ( company_id = (SELECT company_id FROM public.users WHERE id = auth.uid()) );
+
+DROP POLICY IF EXISTS "Users manage own tickets" ON public.support_tickets;
 CREATE POLICY "Users manage own tickets" ON public.support_tickets FOR ALL USING ( user_id = auth.uid() );
+
+DROP POLICY IF EXISTS "Users report incidents" ON public.field_incidents;
 CREATE POLICY "Users report incidents" ON public.field_incidents FOR INSERT WITH CHECK ( user_id = auth.uid() );
+
+DROP POLICY IF EXISTS "Users view own incidents" ON public.field_incidents;
 CREATE POLICY "Users view own incidents" ON public.field_incidents FOR SELECT USING ( user_id = auth.uid() );
+
+DROP POLICY IF EXISTS "Users view own audit logs" ON public.audit_logs;
 CREATE POLICY "Users view own audit logs" ON public.audit_logs FOR SELECT USING ( user_id = auth.uid() );

@@ -58,9 +58,9 @@ const WorkReports: React.FC = () => {
           site.latitude!, site.longitude!
         );
 
-        if (distance > 150) { // Slightly more lenient 150m for reports
-          if (!isSupabaseConnected) {
-             setDistError(`Dev Bypass: Geofence mismatch ignored (${Math.round(distance)}m). Mock mode Active.`);
+        if (distance > 150) { 
+          if (!isSupabaseConnected || import.meta.env.VITE_BYPASS_GEOFENCE === 'true') {
+             setDistError(`Testing Bypass: Geofence mismatch ignored (${Math.round(distance)}m).`);
              setLocationVerified(true);
           } else {
              setDistError(`Geofence rejection: You are ${Math.round(distance)}m away from ${site.name}.`);
