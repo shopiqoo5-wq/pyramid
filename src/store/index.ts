@@ -371,12 +371,20 @@ export const useStore = create<AppState>()(
     const url = import.meta.env.VITE_SUPABASE_URL;
     const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
     
-    if (!url || !key || url === 'https://placeholder.supabase.co') {
+    if (!url || !key || url.includes('placeholder')) {
        set({ isSupabaseConnected: false });
-       console.warn('⚠️ Supabase connection skipped (missing keys).');
+       console.warn('⚠️ SUPABASE: Missing VITE_SUPABASE_URL/KEY. Running in Legacy Local Mode.');
     } else {
+       console.log('📡 Heartbeat: Attempting Secure Connection to', url);
        const isReachable = await SupabaseService.checkConnection();
        set({ isSupabaseConnected: isReachable });
+       
+       if (!isReachable) {
+         console.error('❌ SUPABASE: Connection failed or Schema missing (Run final_schema.sql in Supabase SQL Editor).');
+         get().addAlert({ message: 'Cloud Sync Offline: Running on Local Reserve.', type: 'warning' });
+       } else {
+         console.log('✅ SUPABASE: Operational Hub Connected.');
+       }
     }
 
     if (!get().isSupabaseConnected) return;
