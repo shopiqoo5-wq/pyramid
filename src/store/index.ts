@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { 
   User, Product, InventoryItem, Order, Company, RecurringOrder, FavoriteProduct, 
   Budget, AuditLog, ProductBundle, Notification, Location, Contract, 
@@ -15,6 +16,7 @@ import { generateUUID } from '../lib/supabaseUtils';
 import { calculateIndianGST } from '../utils/gst';
 import { SupabaseService } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
+
 
 interface CartItem {
   productId: string;
@@ -262,7 +264,10 @@ interface AppState {
 
 
 
-export const useStore = create<AppState>()((set, get) => ({
+export const useStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+
   language: 'en',
   setLanguage: (lang) => set({ language: lang }),
   
@@ -2541,4 +2546,16 @@ export const useStore = create<AppState>()((set, get) => ({
     }
     get().addAlert({ message: 'Supervisor-originated manual shift shift entry accepted.', type: 'info' });
   }
-}));
+}),
+    {
+      name: 'pyramid-fm-nexus-storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => {
+        // We exclude volatile runtime states like connection flags and active toasts
+        const { isSupabaseConnected, alerts, ...rest } = state;
+        return rest;
+      },
+    }
+  )
+);
+

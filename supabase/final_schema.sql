@@ -29,6 +29,17 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+-- Fix the Role Enum for legacy databases
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'employee';
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'client_director';
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'client_manager';
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'client_staff';
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'procurement_manager';
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'facility_manager';
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'finance';
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'warehouse_staff';
+
+
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
         CREATE TYPE order_status AS ENUM (
@@ -79,6 +90,14 @@ CREATE TABLE IF NOT EXISTS public.users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- REPAIR: Ensure all USERS columns exist for legacy compatibility
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS face_image_url TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS location_id UUID;
+
+
 -- WAREHOUSES
 CREATE TABLE IF NOT EXISTS public.warehouses (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -109,6 +128,13 @@ CREATE TABLE IF NOT EXISTS public.locations (
     qr_status TEXT DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- REPAIR: Ensure all LOCATIONS columns exist (QR Management)
+ALTER TABLE public.locations ADD COLUMN IF NOT EXISTS qr_token TEXT;
+ALTER TABLE public.locations ADD COLUMN IF NOT EXISTS qr_status TEXT DEFAULT 'active';
+ALTER TABLE public.locations ADD COLUMN IF NOT EXISTS monthly_budget DECIMAL(12, 2) DEFAULT 0;
+ALTER TABLE public.locations ADD COLUMN IF NOT EXISTS current_month_spend DECIMAL(12, 2) DEFAULT 0;
+
 
 -- PRODUCTS
 CREATE TABLE IF NOT EXISTS public.products (
@@ -431,6 +457,71 @@ BEGIN
   END LOOP;
 END $$;
 
+
+-- 7.6. TABLE POLICIES (Comprehensive Operational Coverage)
+-- Locations
+DROP POLICY IF EXISTS "Admins full access" ON public.locations;
+CREATE POLICY "Admins full access" ON public.locations FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Public Read Access" ON public.locations;
+CREATE POLICY "Public Read Access" ON public.locations FOR SELECT USING (true);
+
+-- Orders
+DROP POLICY IF EXISTS "Admins full access" ON public.orders;
+CREATE POLICY "Admins full access" ON public.orders FOR ALL USING (public.is_admin());
+-- Authenticated Write is already defined above
+
+-- Inventory
+DROP POLICY IF EXISTS "Admins full access" ON public.inventory;
+CREATE POLICY "Admins full access" ON public.inventory FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Public Read Access" ON public.inventory;
+CREATE POLICY "Public Read Access" ON public.inventory FOR SELECT USING (true);
+
+-- Attendance
+DROP POLICY IF EXISTS "Admins full access" ON public.attendance_records;
+CREATE POLICY "Admins full access" ON public.attendance_records FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Authenticated Insert Attendance" ON public.attendance_records;
+CREATE POLICY "Authenticated Insert Attendance" ON public.attendance_records FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Users see own attendance" ON public.attendance_records;
+CREATE POLICY "Users see own attendance" ON public.attendance_records FOR SELECT USING (auth.uid() IS NOT NULL);
+
+-- Work Reports
+DROP POLICY IF EXISTS "Admins full access" ON public.work_reports;
+CREATE POLICY "Admins full access" ON public.work_reports FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Authenticated Insert Work Reports" ON public.work_reports;
+CREATE POLICY "Authenticated Insert Work Reports" ON public.work_reports FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Users see own reports" ON public.work_reports;
+
+-- Field Incidents
+DROP POLICY IF EXISTS "Admins full access" ON public.field_incidents;
+CREATE POLICY "Admins full access" ON public.field_incidents FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Authenticated Insert Incidents" ON public.field_incidents;
+CREATE POLICY "Authenticated Insert Incidents" ON public.field_incidents FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Users see own incidents" ON public.field_incidents;
+
+-- Client Visibility (Optional but recommended)
+-- Users see their own company's orders
+DROP POLICY IF EXISTS "Users see own company orders" ON public.orders;
+CREATE POLICY "Users see own company orders" ON public.orders FOR SELECT USING (
+  company_id = (auth.jwt() -> 'app_metadata' ->> 'company_id')::UUID
+);
+
+-- Users see their own company's locations
+DROP POLICY IF EXISTS "Users see own company locations" ON public.locations;
+CREATE POLICY "Users see own company locations" ON public.locations FOR SELECT USING (
+  company_id = (auth.jwt() -> 'app_metadata' ->> 'company_id')::UUID
+);
+
+-- Users see their own company's inventory
+DROP POLICY IF EXISTS "Users see own company inventory" ON public.inventory;
+CREATE POLICY "Users see own company inventory" ON public.inventory FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.warehouses w
+    JOIN public.locations l ON l.default_warehouse_id = w.id
+    WHERE w.id = public.inventory.warehouse_id
+    AND l.company_id = (auth.jwt() -> 'app_metadata' ->> 'company_id')::UUID
+  )
+);
+
 -- STORAGE POLICIES
 DROP POLICY IF EXISTS "Public Read Storage" ON storage.objects;
 CREATE POLICY "Public Read Storage" ON storage.objects FOR SELECT USING (true);
@@ -465,4 +556,12 @@ ON CONFLICT (id) DO NOTHING;
 -- Employees
 INSERT INTO public.employees (id, company_id, location_id, name, role) VALUES
 ('e1111111-1111-4111-8111-000000000001', 'd4444444-6666-4666-8666-000000000004', '11111111-2222-4000-8000-000000000001', 'Rahul Cleaner', 'Cleaner')
+ON CONFLICT (id) DO NOTHING;
+
+-- USERS (Note: In a real Supabase environment, these must exist in auth.users as well)
+INSERT INTO public.users (id, name, email, role, phone, status) VALUES
+('d1111111-3333-4333-8333-000000000001', 'Pyramid FMS Master', 'master@pyramidfms.com', 'admin', '9999988888', 'active'),
+('11111111-0000-4000-8000-000000000001', 'Admin Sameer', 'admin@pyramidfm.com', 'admin', '9876543210', 'active'),
+('11111111-0000-4000-8000-000000000002', 'John Doe', 'john@alphacorp.com', 'client_manager', '9123456780', 'active'),
+('d2222222-4444-4444-8444-000000000002', 'Sameer Employee', 'sameer@pyramidfm.com', 'employee', '9876543211', 'active')
 ON CONFLICT (id) DO NOTHING;
