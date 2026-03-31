@@ -35,13 +35,15 @@ export const SupabaseService = {
   },
 
   async getUsers() {
-    const { data } = await supabase.from('users').select('*');
+    const { data, error } = await supabase.from('users').select('*');
+    if (error) throw error;
     return snakeToCamel(data || []);
   },
 
   // --- PRODUCTS ---
   async getProducts() {
-    const { data } = await supabase.from('products').select('*').eq('active', true);
+    const { data, error } = await supabase.from('products').select('*').eq('active', true);
+    if (error) throw error;
     return snakeToCamel(data || []) as Product[];
   },
 
@@ -61,7 +63,8 @@ export const SupabaseService = {
 
   // --- COMPANIES ---
   async getCompanies() {
-    const { data } = await supabase.from('companies').select('*');
+    const { data, error } = await supabase.from('companies').select('*');
+    if (error) throw error;
     return snakeToCamel(data || []) as Company[];
   },
 
@@ -83,7 +86,8 @@ export const SupabaseService = {
   async getLocations(companyId?: string) {
     let query = supabase.from('locations').select('*');
     if (companyId) query = query.eq('company_id', companyId);
-    const { data } = await query;
+    const { data, error } = await query;
+    if (error) throw error;
     return snakeToCamel(data || []);
   },
 
@@ -105,7 +109,8 @@ export const SupabaseService = {
   async getOrders(companyId?: string) {
     let query = supabase.from('orders').select('*');
     if (companyId) query = query.eq('company_id', companyId);
-    const { data } = await query;
+    const { data, error } = await query;
+    if (error) throw error;
     return snakeToCamel(data || []) as Order[];
   },
 
@@ -120,7 +125,8 @@ export const SupabaseService = {
 
   // --- INVENTORY ---
   async getInventory() {
-    const { data } = await supabase.from('inventory').select('*');
+    const { data, error } = await supabase.from('inventory').select('*');
+    if (error) throw error;
     return snakeToCamel(data || []) as InventoryItem[];
   },
 
@@ -309,7 +315,8 @@ export const SupabaseService = {
 
   // --- FIELD OPS ---
   async getIncidents() {
-    const { data } = await supabase.from('field_incidents').select('*');
+    const { data, error } = await supabase.from('field_incidents').select('*');
+    if (error) throw error;
     return snakeToCamel(data || []);
   },
 
@@ -322,7 +329,8 @@ export const SupabaseService = {
   },
 
   async getWorkReports() {
-    const { data } = await supabase.from('work_reports').select('*');
+    const { data, error } = await supabase.from('work_reports').select('*');
+    if (error) throw error;
     return snakeToCamel(data || []);
   },
 
@@ -333,7 +341,8 @@ export const SupabaseService = {
   async getAttendance(locationId?: string) {
     let query = supabase.from('attendance_records').select('*');
     if (locationId) query = query.eq('location_id', locationId);
-    const { data } = await query;
+    const { data, error } = await query;
+    if (error) throw error;
     return snakeToCamel(data || []);
   },
 

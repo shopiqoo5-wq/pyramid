@@ -330,6 +330,150 @@ CREATE TABLE IF NOT EXISTS public.daily_checklists (
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- TIME OFF REQUESTS (Leave & Absence)
+CREATE TABLE IF NOT EXISTS public.time_off_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+    type TEXT NOT NULL, -- 'Sick', 'Vacation', 'Unpaid'
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    reason TEXT,
+    status TEXT NOT NULL DEFAULT 'pending', -- 'approved', 'rejected'
+    admin_remarks TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- CUSTOM ROLES
+CREATE TABLE IF NOT EXISTS public.custom_roles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    permissions TEXT[] DEFAULT '{}',
+    description TEXT,
+    is_system BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- WORK ASSIGNMENTS
+CREATE TABLE IF NOT EXISTS public.work_assignments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title TEXT NOT NULL,
+    description TEXT,
+    assigned_role TEXT,
+    assigned_employee_id UUID REFERENCES public.employees(id) ON DELETE SET NULL,
+    location_id UUID REFERENCES public.locations(id) ON DELETE CASCADE,
+    recurrence TEXT NOT NULL, -- 'daily', 'weekly', 'one-off'
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- SITE PROTOCOLS
+CREATE TABLE IF NOT EXISTS public.site_protocols (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    location_id UUID NOT NULL REFERENCES public.locations(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- EMPLOYEE SHIFTS
+CREATE TABLE IF NOT EXISTS public.employee_shifts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+    location_id UUID NOT NULL REFERENCES public.locations(id) ON DELETE CASCADE,
+    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    role TEXT,
+    status TEXT DEFAULT 'Scheduled', -- 'In Progress', 'Completed', 'Cancelled'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- AUDIT LOGS
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    details TEXT,
+    type TEXT DEFAULT 'standard',
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- EXCEPTIONS
+CREATE TABLE IF NOT EXISTS public.exceptions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    description TEXT NOT NULL,
+    related_entity_id TEXT,
+    status TEXT DEFAULT 'active',
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- FRAUD FLAGS
+CREATE TABLE IF NOT EXISTS public.fraud_flags (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    risk_level TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- COMPLIANCE DOCS
+CREATE TABLE IF NOT EXISTS public.compliance_docs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    type TEXT NOT NULL,
+    file_url TEXT NOT NULL,
+    uploaded_by UUID REFERENCES public.users(id),
+    category TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- SUPPORT TICKETS
+CREATE TABLE IF NOT EXISTS public.tickets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    custom_id TEXT UNIQUE NOT NULL,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    category TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Open',
+    attachments TEXT[] DEFAULT '{}',
+    sentiment_score DECIMAL(3, 2),
+    assigned_to UUID REFERENCES public.users(id),
+    related_order_id UUID,
+    related_location_id UUID REFERENCES public.locations(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- TICKET MESSAGES
+CREATE TABLE IF NOT EXISTS public.ticket_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ticket_id UUID NOT NULL REFERENCES public.tickets(id) ON DELETE CASCADE,
+    sender_id UUID REFERENCES public.users(id),
+    message TEXT NOT NULL,
+    image_url TEXT,
+    is_staff BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- WEBHOOKS
+CREATE TABLE IF NOT EXISTS public.webhooks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    secret_key TEXT,
+    event TEXT NOT NULL,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- 6. SYSTEM INTELLIGENCE & INFRASTRUCTURE
 -- STORAGE BUCKETS
 INSERT INTO storage.buckets (id, name, public)
@@ -427,6 +571,18 @@ ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.work_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.field_incidents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.time_off_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.custom_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.work_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.site_protocols ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exceptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fraud_flags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.compliance_docs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ticket_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.webhooks ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Public Read Access" ON public.products;
 CREATE POLICY "Public Read Access" ON public.products FOR SELECT USING (true);
@@ -497,6 +653,40 @@ CREATE POLICY "Admins full access" ON public.field_incidents FOR ALL USING (publ
 DROP POLICY IF EXISTS "Authenticated Insert Incidents" ON public.field_incidents;
 CREATE POLICY "Authenticated Insert Incidents" ON public.field_incidents FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 DROP POLICY IF EXISTS "Users see own incidents" ON public.field_incidents;
+
+-- Advanced Workforce & Intelligence Policies
+DROP POLICY IF EXISTS "Admins full access" ON public.time_off_requests;
+CREATE POLICY "Admins full access" ON public.time_off_requests FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.custom_roles;
+CREATE POLICY "Admins full access" ON public.custom_roles FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.work_assignments;
+CREATE POLICY "Admins full access" ON public.work_assignments FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.site_protocols;
+CREATE POLICY "Admins full access" ON public.site_protocols FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.employee_shifts;
+CREATE POLICY "Admins full access" ON public.employee_shifts FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.audit_logs;
+CREATE POLICY "Admins full access" ON public.audit_logs FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.exceptions;
+CREATE POLICY "Admins full access" ON public.exceptions FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.fraud_flags;
+CREATE POLICY "Admins full access" ON public.fraud_flags FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.compliance_docs;
+CREATE POLICY "Admins full access" ON public.compliance_docs FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.tickets;
+CREATE POLICY "Admins full access" ON public.tickets FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.ticket_messages;
+CREATE POLICY "Admins full access" ON public.ticket_messages FOR ALL USING (public.is_admin());
+DROP POLICY IF EXISTS "Admins full access" ON public.webhooks;
+CREATE POLICY "Admins full access" ON public.webhooks FOR ALL USING (public.is_admin());
+
+-- Employee/User Actions
+DROP POLICY IF EXISTS "Authenticated Insert Time Off" ON public.time_off_requests;
+CREATE POLICY "Authenticated Insert Time Off" ON public.time_off_requests FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Authenticated Insert Tickets" ON public.tickets;
+CREATE POLICY "Authenticated Insert Tickets" ON public.tickets FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Authenticated Insert Messages" ON public.ticket_messages;
+CREATE POLICY "Authenticated Insert Messages" ON public.ticket_messages FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Client Visibility (Optional but recommended)
 -- Users see their own company's orders
