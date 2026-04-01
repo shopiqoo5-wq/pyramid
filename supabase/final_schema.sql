@@ -486,18 +486,22 @@ VALUES
   ('products', 'products', true)
 ON CONFLICT (id) DO NOTHING;
 
--- TRIGGER: Auth Sync (Profile Creation)
+-- TRIGGER: Auth Sync (Atomic Profile & Employee Creation)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  v_role TEXT := COALESCE(new.raw_user_meta_data->>'role', 'client_staff');
+  v_company_id UUID := (new.raw_user_meta_data->>'company_id')::UUID;
+  v_employee_id UUID := uuid_generate_v4();
 BEGIN
-  -- 1. Sync to public.users (Idempotent)
+  -- 1. Atomic Profile Sync
   INSERT INTO public.users (id, name, email, role, company_id)
   VALUES (
     new.id, 
     COALESCE(new.raw_user_meta_data->>'name', 'User ' || SUBSTR(new.id::text, 1, 8)), 
     new.email, 
-    COALESCE((new.raw_user_meta_data->>'role')::user_role, 'client_staff'),
-    (new.raw_user_meta_data->>'company_id')::UUID
+    v_role::user_role,
+    v_company_id
   ) ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     email = EXCLUDED.email,
@@ -505,12 +509,23 @@ BEGIN
     company_id = EXCLUDED.company_id,
     updated_at = NOW();
 
-  -- 2. Sync role and company metadata to auth.users to avoid RLS recursion
+  -- 2. Auto-create Employee Record if Role is 'employee'
+  IF v_role = 'employee' THEN
+    INSERT INTO public.employees (id, user_id, company_id, name, role)
+    VALUES (v_employee_id, new.id, v_company_id, COALESCE(new.raw_user_meta_data->>'name', 'Worker'), 'Staff')
+    ON CONFLICT (user_id) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id INTO v_employee_id;
+  ELSE
+    v_employee_id := NULL;
+  END IF;
+
+  -- 3. Injected Metadata Sync (Atomic JWT Claims)
   UPDATE auth.users 
   SET raw_app_meta_data = COALESCE(raw_app_meta_data, '{}'::jsonb) || 
     jsonb_build_object(
-      'role', COALESCE((new.raw_user_meta_data->>'role'), 'client_staff'),
-      'company_id', (new.raw_user_meta_data->>'company_id')
+      'role', v_role,
+      'company_id', v_company_id,
+      'employee_id', v_employee_id
     )
   WHERE id = new.id;
 
@@ -561,221 +576,118 @@ CREATE TRIGGER before_order_insert_credit
   BEFORE INSERT ON public.orders
   FOR EACH ROW EXECUTE PROCEDURE public.validate_company_credit();
 
--- RLS POLICIES (Development Grade)
-ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.locations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;-- 1. Users table fixes (Avoid recursion)
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+-- =========================================================================
+-- 7. PRODUCTION-READY SECURITY FABRIC (HARDENED V4.0)
+-- =========================================================================
 
-CREATE POLICY "Users can view own profile"
-ON public.users FOR SELECT
-TO authenticated
-USING (auth.uid() = id);
-
-CREATE POLICY "Admins can manage all users"
-ON public.users FOR ALL
-TO authenticated
-USING (
-  (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
-);
-
--- 2. Attendance Persistence & Visibility
-ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Employees can manage own attendance"
-ON public.attendance_records FOR ALL
-TO authenticated
-USING (employee_id = auth.uid())
-WITH CHECK (employee_id = auth.uid());
-
-CREATE POLICY "Admins can view all attendance"
-ON public.attendance_records FOR SELECT
-TO authenticated
-USING (
-  (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
-);
-
--- 3. Work Reports Persistence
-ALTER TABLE public.work_reports ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Employees can submit work reports"
-ON public.work_reports FOR INSERT
-TO authenticated
-WITH CHECK (employee_id = auth.uid());
-
-CREATE POLICY "Relevant parties can view work reports"
-ON public.work_reports FOR SELECT
-TO authenticated
-USING (
-  employee_id = auth.uid() OR 
-  (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
-);
-
--- 4. Field Incidents Persistence
-ALTER TABLE public.field_incidents ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Authenticated users can submit incidents"
-ON public.field_incidents FOR INSERT
-TO authenticated
-WITH CHECK (true);
-
-CREATE POLICY "Admins can manage all incidents"
-ON public.field_incidents FOR ALL
-TO authenticated
-USING (
-  (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
-);
-ALTER TABLE public.work_reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.field_incidents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.time_off_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.custom_roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.work_assignments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.site_protocols ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.employee_shifts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.exceptions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.fraud_flags ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.compliance_docs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tickets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ticket_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.webhooks ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Public Read Access" ON public.products;
-CREATE POLICY "Public Read Access" ON public.products FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "Public Read Access" ON public.companies;
-CREATE POLICY "Public Read Access" ON public.companies FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "Authenticated Write Orders" ON public.orders;
-CREATE POLICY "Authenticated Write Orders" ON public.orders FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-
--- USERS POLICIES (Hardened against recursion using JWT & Security Definer)
-DROP POLICY IF EXISTS "Admins full access" ON public.users;
-CREATE POLICY "Admins full access" ON public.users FOR ALL USING (public.is_admin());
-
-DROP POLICY IF EXISTS "Users see own profile" ON public.users;
-CREATE POLICY "Users see own profile" ON public.users FOR SELECT USING (auth.uid() = id);
-
--- 7.5. MIGRATION: Sync existing users' roles to auth.users metadata (To apply RLS fixes immediately)
+-- Enable RLS Globals
 DO $$ 
 DECLARE
-  u RECORD;
+  t text;
 BEGIN
-  FOR u IN SELECT id, role, company_id FROM public.users LOOP
-    UPDATE auth.users 
-    SET raw_app_meta_data = COALESCE(raw_app_meta_data, '{}'::jsonb) || 
-      jsonb_build_object('role', u.role::text, 'company_id', u.company_id::text)
-    WHERE id = u.id;
+  FOR t IN (SELECT table_name FROM information_schema.tables WHERE table_schema = 'public') LOOP
+    EXECUTE 'ALTER TABLE public.' || quote_ident(t) || ' ENABLE ROW LEVEL SECURITY;';
   END LOOP;
 END $$;
 
+-- 7.1. HIGH-PERFORMANCE SECURITY HELPERS (JWT First)
+CREATE OR REPLACE FUNCTION public.get_role() RETURNS TEXT AS $$
+  SELECT auth.jwt() -> 'app_metadata' ->> 'role';
+$$ LANGUAGE sql STABLE;
 
--- 7.6. TABLE POLICIES (Comprehensive Operational Coverage)
--- Locations
-DROP POLICY IF EXISTS "Admins full access" ON public.locations;
-CREATE POLICY "Admins full access" ON public.locations FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Public Read Access" ON public.locations;
-CREATE POLICY "Public Read Access" ON public.locations FOR SELECT USING (true);
+CREATE OR REPLACE FUNCTION public.get_employee_id() RETURNS UUID AS $$
+  SELECT (auth.jwt() -> 'app_metadata' ->> 'employee_id')::UUID;
+$$ LANGUAGE sql STABLE;
 
--- Orders
-DROP POLICY IF EXISTS "Admins full access" ON public.orders;
-CREATE POLICY "Admins full access" ON public.orders FOR ALL USING (public.is_admin());
--- Authenticated Write is already defined above
+CREATE OR REPLACE FUNCTION public.get_my_company() RETURNS UUID AS $$
+  SELECT (auth.jwt() -> 'app_metadata' ->> 'company_id')::UUID;
+$$ LANGUAGE sql STABLE;
 
--- Inventory
-DROP POLICY IF EXISTS "Admins full access" ON public.inventory;
-CREATE POLICY "Admins full access" ON public.inventory FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Public Read Access" ON public.inventory;
-CREATE POLICY "Public Read Access" ON public.inventory FOR SELECT USING (true);
 
--- Attendance
-DROP POLICY IF EXISTS "Admins full access" ON public.attendance_records;
-CREATE POLICY "Admins full access" ON public.attendance_records FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Authenticated Insert Attendance" ON public.attendance_records;
-CREATE POLICY "Authenticated Insert Attendance" ON public.attendance_records FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-DROP POLICY IF EXISTS "Users see own attendance" ON public.attendance_records;
-CREATE POLICY "Users see own attendance" ON public.attendance_records FOR SELECT USING (auth.uid() IS NOT NULL);
+-- 7.2. IDENTITY GUARD (No-Spoof Auto-Mapping)
+CREATE OR REPLACE FUNCTION public.auto_link_identity()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_meta_employee_id UUID := public.get_employee_id();
+BEGIN
+    -- 1. Security Check: Block non-admins from spoofing IDs
+    IF NEW.employee_id IS NOT NULL AND NEW.employee_id != v_meta_employee_id AND public.get_role() != 'admin' THEN
+        RAISE EXCEPTION 'Security Violation: Cannot submit data for another identity.';
+    END IF;
 
--- Work Reports
-DROP POLICY IF EXISTS "Admins full access" ON public.work_reports;
-CREATE POLICY "Admins full access" ON public.work_reports FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Authenticated Insert Work Reports" ON public.work_reports;
-CREATE POLICY "Authenticated Insert Work Reports" ON public.work_reports FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-DROP POLICY IF EXISTS "Users see own reports" ON public.work_reports;
+    -- 2. Performance: Use JWT metadata directly if available
+    IF NEW.employee_id IS NULL THEN
+        IF v_meta_employee_id IS NULL AND public.get_role() != 'admin' THEN
+            RAISE EXCEPTION 'Authorization Error: No Employee ID found in secure session.';
+        END IF;
+        NEW.employee_id := v_meta_employee_id;
+    END IF;
 
--- Field Incidents
-DROP POLICY IF EXISTS "Admins full access" ON public.field_incidents;
-CREATE POLICY "Admins full access" ON public.field_incidents FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Authenticated Insert Incidents" ON public.field_incidents;
-CREATE POLICY "Authenticated Insert Incidents" ON public.field_incidents FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-DROP POLICY IF EXISTS "Users see own incidents" ON public.field_incidents;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Advanced Workforce & Intelligence Policies
-DROP POLICY IF EXISTS "Admins full access" ON public.time_off_requests;
-CREATE POLICY "Admins full access" ON public.time_off_requests FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.custom_roles;
-CREATE POLICY "Admins full access" ON public.custom_roles FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.work_assignments;
-CREATE POLICY "Admins full access" ON public.work_assignments FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.site_protocols;
-CREATE POLICY "Admins full access" ON public.site_protocols FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.employee_shifts;
-CREATE POLICY "Admins full access" ON public.employee_shifts FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.audit_logs;
-CREATE POLICY "Admins full access" ON public.audit_logs FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.exceptions;
-CREATE POLICY "Admins full access" ON public.exceptions FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.fraud_flags;
-CREATE POLICY "Admins full access" ON public.fraud_flags FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.compliance_docs;
-CREATE POLICY "Admins full access" ON public.compliance_docs FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.tickets;
-CREATE POLICY "Admins full access" ON public.tickets FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.ticket_messages;
-CREATE POLICY "Admins full access" ON public.ticket_messages FOR ALL USING (public.is_admin());
-DROP POLICY IF EXISTS "Admins full access" ON public.webhooks;
-CREATE POLICY "Admins full access" ON public.webhooks FOR ALL USING (public.is_admin());
+-- Map Triggers (Clean & Rebuild)
+DROP TRIGGER IF EXISTS tr_guard_attendance ON public.attendance_records;
+CREATE TRIGGER tr_guard_attendance BEFORE INSERT ON public.attendance_records FOR EACH ROW EXECUTE PROCEDURE public.auto_link_identity();
 
--- Employee/User Actions
-DROP POLICY IF EXISTS "Authenticated Insert Time Off" ON public.time_off_requests;
-CREATE POLICY "Authenticated Insert Time Off" ON public.time_off_requests FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-DROP POLICY IF EXISTS "Authenticated Insert Tickets" ON public.tickets;
-CREATE POLICY "Authenticated Insert Tickets" ON public.tickets FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-DROP POLICY IF EXISTS "Authenticated Insert Messages" ON public.ticket_messages;
-CREATE POLICY "Authenticated Insert Messages" ON public.ticket_messages FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP TRIGGER IF EXISTS tr_guard_reports ON public.work_reports;
+CREATE TRIGGER tr_guard_reports BEFORE INSERT ON public.work_reports FOR EACH ROW EXECUTE PROCEDURE public.auto_link_identity();
 
--- Client Visibility (Optional but recommended)
--- Users see their own company's orders
-DROP POLICY IF EXISTS "Users see own company orders" ON public.orders;
-CREATE POLICY "Users see own company orders" ON public.orders FOR SELECT USING (
-  company_id = (auth.jwt() -> 'app_metadata' ->> 'company_id')::UUID
-);
 
--- Users see their own company's locations
-DROP POLICY IF EXISTS "Users see own company locations" ON public.locations;
-CREATE POLICY "Users see own company locations" ON public.locations FOR SELECT USING (
-  company_id = (auth.jwt() -> 'app_metadata' ->> 'company_id')::UUID
-);
+-- 7.3. HARDENED POLICIES (Consolidated & Minimal)
+-- Clean all legacy policies first
+DO $$ 
+DECLARE 
+  pol RECORD;
+BEGIN 
+  FOR pol IN SELECT policyname, tablename FROM pg_policies WHERE schemaname = 'public' LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', pol.policyname, pol.tablename);
+  END LOOP;
+END $$;
 
--- Users see their own company's inventory
-DROP POLICY IF EXISTS "Users see own company inventory" ON public.inventory;
-CREATE POLICY "Users see own company inventory" ON public.inventory FOR SELECT USING (
-  EXISTS (
-    SELECT 1 FROM public.warehouses w
-    JOIN public.locations l ON l.default_warehouse_id = w.id
-    WHERE w.id = public.inventory.warehouse_id
-    AND l.company_id = (auth.jwt() -> 'app_metadata' ->> 'company_id')::UUID
-  )
-);
+-- Companies & Products
+CREATE POLICY "Auth View Companies" ON public.companies FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admin All Companies" ON public.companies FOR ALL TO authenticated USING (public.get_role() = 'admin');
 
--- STORAGE POLICIES
-DROP POLICY IF EXISTS "Public Read Storage" ON storage.objects;
-CREATE POLICY "Public Read Storage" ON storage.objects FOR SELECT USING (true);
+CREATE POLICY "Auth View Products" ON public.products FOR SELECT TO authenticated 
+  USING (eligible_companies = '{}' OR public.get_my_company() = ANY(eligible_companies) OR public.get_role() = 'admin');
+CREATE POLICY "Admin All Products" ON public.products FOR ALL TO authenticated USING (public.get_role() = 'admin');
 
-DROP POLICY IF EXISTS "Auth Upload Storage" ON storage.objects;
-CREATE POLICY "Auth Upload Storage" ON storage.objects FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- Attendance & Work Reports (Identity Scoped)
+CREATE POLICY "Employee Own Attendance" ON public.attendance_records FOR ALL TO authenticated 
+  USING (employee_id = public.get_employee_id() OR public.get_role() = 'admin')
+  WITH CHECK (employee_id = public.get_employee_id() OR public.get_role() = 'admin');
+
+CREATE POLICY "Employee Own Reports" ON public.work_reports FOR ALL TO authenticated 
+  USING (employee_id = public.get_employee_id() OR public.get_role() = 'admin')
+  WITH CHECK (employee_id = public.get_employee_id() OR public.get_role() = 'admin');
+
+-- Field Operations (Incidents & Shifts)
+CREATE POLICY "Incident Control" ON public.field_incidents FOR ALL TO authenticated 
+  USING (user_id = auth.uid() OR public.get_role() = 'admin')
+  WITH CHECK (user_id = auth.uid() OR public.get_role() = 'admin');
+
+-- Commerce & Logistics (Company Scoped)
+CREATE POLICY "Company Sites" ON public.locations FOR ALL TO authenticated 
+  USING (company_id = public.get_my_company() OR public.get_role() = 'admin');
+
+CREATE POLICY "Company Orders" ON public.orders FOR ALL TO authenticated 
+  USING (company_id = public.get_my_company() OR public.get_role() = 'admin');
+
+CREATE POLICY "Order Continuity" ON public.order_items FOR ALL TO authenticated 
+  USING (EXISTS (SELECT 1 FROM public.orders o WHERE o.id = order_id AND (o.company_id = public.get_my_company() OR public.get_role() = 'admin')));
+
+-- Support Infrastructure
+CREATE POLICY "Ticket Access" ON public.tickets FOR ALL TO authenticated 
+  USING (company_id = public.get_my_company() OR user_id = auth.uid() OR public.get_role() = 'admin');
+
+CREATE POLICY "Message Stream" ON public.ticket_messages FOR ALL TO authenticated 
+  USING (EXISTS (SELECT 1 FROM public.tickets t WHERE t.id = ticket_id AND (t.company_id = public.get_my_company() OR t.user_id = auth.uid() OR public.get_role() = 'admin')));
+
+-- System Intel (Admin strictly restricted)
+CREATE POLICY "Admin Audit" ON public.audit_logs FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Admin Fraud" ON public.fraud_flags FOR ALL TO authenticated USING (public.get_role() = 'admin');
 
 -- 8. SAMPLE SEED DATA
 -- Companies
