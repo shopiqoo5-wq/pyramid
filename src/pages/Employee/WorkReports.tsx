@@ -82,7 +82,7 @@ const WorkReports: React.FC = () => {
   const myReports = workReports
     .filter(r => r.employeeId === employee?.id)
     .filter(r => filter === 'all' || r.status === filter)
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    .sort((a, b) => new Date(b.createdAt || (b as any).timestamp || '').getTime() - new Date(a.createdAt || (a as any).timestamp || '').getTime());
 
   const handleReportSubmit = async () => {
     if (!employee || !reportText) return;
@@ -194,10 +194,10 @@ const WorkReports: React.FC = () => {
                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                      <div>
                        <span style={{ fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                         {formatDate(report.timestamp)}
+                         {formatDate(report.createdAt || (report as any).timestamp || '')}
                        </span>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-sub)', marginTop: '2px', fontWeight: 800 }}>
-                         <LuClock size={12} /> {new Date(report.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                         <LuClock size={12} /> {new Date(report.createdAt || (report as any).timestamp || '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                        </div>
                      </div>
                      <div>

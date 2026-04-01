@@ -148,7 +148,7 @@ const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, isSidebarOpen }) => {
                         <div>
                           <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '0.95rem' }}>{notif.title}</h4>
                           <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>{notif.message}</p>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(notif.timestamp).toLocaleString()}</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(notif.createdAt || (notif as any).timestamp || '').toLocaleString()}</span>
                         </div>
                       </div>
                     ))

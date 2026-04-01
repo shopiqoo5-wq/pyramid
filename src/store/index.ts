@@ -215,6 +215,7 @@ interface AppState {
   rejectWorkReport: (reportId: string, supervisorId: string) => Promise<void>;
   submitTimeOffRequest: (request: Omit<TimeOffRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   updateTimeOffStatus: (id: string, status: TimeOffRequest['status'], adminRemarks?: string) => Promise<void>;
+  submitAttendance: (record: { employeeId: string; photoUrl: string; checkOut?: string; locationId?: string; type?: 'in' | 'out'; latitude?: number; longitude?: number; metadata?: any }, isBase64?: boolean) => Promise<void>;
   recordAttendance: (record: { employeeId: string; photoUrl: string; checkOut?: string; locationId?: string; type?: 'in' | 'out'; latitude?: number; longitude?: number; metadata?: any }, isBase64?: boolean) => Promise<void>;
   updateAttendanceRecord: (id: string, updates: Partial<AttendanceRecord>) => void;
   deleteAttendanceRecord: (id: string) => void;
@@ -395,7 +396,7 @@ export const useStore = create<AppState>()(
       label: string, 
       fetcher: () => Promise<any>, 
       setter: (data: any) => void,
-      stateKey: K
+      _stateKey: K
     ) => {
       try {
         const cloudData = await fetcher();
@@ -2197,6 +2198,10 @@ export const useStore = create<AppState>()(
       )
     }));
     get().addAlert({ message: 'Report Rejected.', type: 'info' });
+  },
+
+  submitAttendance: async (record, isBase64) => {
+    return get().recordAttendance(record, isBase64);
   },
 
   recordAttendance: async (record, isBase64) => {

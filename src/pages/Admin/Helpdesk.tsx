@@ -275,7 +275,7 @@ const Helpdesk: React.FC = () => {
                     )}
                   </div>
                   <div style={{ fontSize: '0.6rem', fontWeight: 800, opacity: 0.6, textTransform: 'uppercase' }}>
-                     {msg.isStaff ? 'Dispatcher Response' : 'Client Message'} • {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                     {msg.isStaff ? 'Dispatcher Response' : 'Client Message'} • {new Date(msg.createdAt || (msg as any).created_at || '').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                   </div>
                 </div>
               ))}

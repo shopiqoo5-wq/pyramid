@@ -118,7 +118,7 @@ const ClientSettings: React.FC = () => {
                {myLogs.length > 0 ? myLogs.map(log => (
                  <div key={log.id} style={{ fontSize: '0.75rem', padding: '0.5rem', borderLeft: '2px solid var(--primary)', background: 'var(--surface-hover)', borderRadius: '0 8px 8px 0' }}>
                    <div style={{ fontWeight: 800 }}>{log.action.replace('_', ' ').toUpperCase()}</div>
-                   <div className="text-muted">{new Date(log.timestamp).toLocaleString()}</div>
+                   <div className="text-muted">{new Date(log.createdAt || (log as any).timestamp || '').toLocaleString()}</div>
                  </div>
                )) : (
                  <div className="text-muted" style={{ fontSize: '0.75rem', textAlign: 'center', padding: '1rem' }}>No recent activity records.</div>

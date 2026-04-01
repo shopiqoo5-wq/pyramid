@@ -412,7 +412,7 @@ const InventoryControl: React.FC = () => {
                   const product = products.find(p => p.id === log.productId);
                   return (
                     <tr key={log.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: 'var(--text-sub)' }}>{new Date(log.timestamp).toLocaleDateString()}</td>
+                      <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: 'var(--text-sub)' }}>{new Date(log.createdAt || (log as any).timestamp || '').toLocaleDateString()}</td>
                       <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.875rem', fontWeight: 600 }}>{product?.name}</td>
                       <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.85rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -491,7 +491,7 @@ const InventoryControl: React.FC = () => {
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: 'var(--text-sub)' }}>
-                        {new Date(log.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        {new Date(log.createdAt || (log as any).timestamp || '').toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                       </td>
                       <td style={{ padding: '0.875rem 1.25rem' }}>
                         <span style={{ 

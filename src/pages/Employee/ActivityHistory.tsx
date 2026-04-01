@@ -17,7 +17,7 @@ const ActivityHistory: React.FC = () => {
     
   const myReports = workReports
     .filter(r => r.employeeId === employee?.id)
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    .sort((a, b) => new Date(b.createdAt || (b as any).timestamp || '').getTime() - new Date(a.createdAt || (a as any).timestamp || '').getTime());
 
   // Stats
   const totalShifts = myAttendance.length;
@@ -114,7 +114,7 @@ const ActivityHistory: React.FC = () => {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem', alignItems: 'center' }}>
                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--secondary)' }} />
-                   <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{formatDate(report.timestamp)}</span>
+                   <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{formatDate(report.createdAt || (report as any).timestamp || '')}</span>
                  </div>
                  {getStatusBadge(report.status)}
               </div>

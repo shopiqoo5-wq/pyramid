@@ -155,7 +155,7 @@ const SystemHealth: React.FC = () => {
                    >
                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                         <span style={{ color: 'var(--text-muted)', fontWeight: 800 }}>[{log.action.toUpperCase()}]</span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{new Date(log.createdAt || (log as any).timestamp || '').toLocaleTimeString()}</span>
                      </div>
                      <div style={{ color: 'var(--text-main)' }}>{log.details}</div>
                      <div style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '0.25rem' }}>USER_ID: {log.userId?.slice(0,8)}...</div>

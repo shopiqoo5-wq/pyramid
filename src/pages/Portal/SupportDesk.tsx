@@ -363,7 +363,7 @@ const SupportDesk: React.FC = () => {
                       )}
                     </div>
                     <div style={{ fontSize: '0.65rem', fontWeight: 800, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      {msg.isStaff ? 'Dispatch Support Team' : 'You'} • {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                      {msg.isStaff ? 'Dispatch Support Team' : 'You'} • {new Date(msg.createdAt || (msg as any).created_at || '').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                     </div>
                   </motion.div>
                 ))}

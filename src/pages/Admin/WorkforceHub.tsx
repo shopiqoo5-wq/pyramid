@@ -271,8 +271,8 @@ const WorkforceHub: React.FC = () => {
 
           <div style={{ position: 'relative', paddingLeft: '2rem', borderLeft: '2px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {[
-              ...attendanceRecords.map(r => ({ ...r, type: 'attendance' as const, ts: r.checkIn || r.timestamp || new Date().toISOString() })),
-              ...workReports.map(r => ({ ...r, type: 'report' as const, ts: r.timestamp || new Date().toISOString() }))
+              ...attendanceRecords.map(r => ({ ...r, type: 'attendance' as const, ts: r.checkIn || (r as any).timestamp || new Date().toISOString() })),
+              ...workReports.map(r => ({ ...r, type: 'report' as const, ts: r.createdAt || (r as any).timestamp || new Date().toISOString() }))
             ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()).map(activity => {
               const emp = employees.find(e => e.id === activity.employeeId);
               const dateObj = new Date(activity.ts);
@@ -400,7 +400,7 @@ const WorkforceHub: React.FC = () => {
                  )},
                  { key: 'timestamp', header: 'TIMESTAMP', render: (report: any) => (
                     <span className="text-muted" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
-                      {new Date(report.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      {new Date(report.createdAt || report.timestamp || '').toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                     </span>
                  )},
                  { key: 'actions', header: '', render: (report: any) => (
@@ -436,7 +436,7 @@ const WorkforceHub: React.FC = () => {
                     </div>
                  )}
                ]}
-               data={workReports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())}
+               data={workReports.sort((a, b) => new Date(b.createdAt || (b as any).timestamp || '').getTime() - new Date(a.createdAt || (a as any).timestamp || '').getTime())}
              />
           </div>
         </div>
@@ -857,7 +857,7 @@ const WorkforceHub: React.FC = () => {
                 employeeId: punchEmpId,
                 locationId: emp?.locationId || '',
                 type: punchType,
-                imageUrl: 'https://images.unsplash.com/photo-1454165833767-027eeef1593e?w=800&auto=format&fit=crop&q=60', // System marker image
+                photoUrl: 'https://images.unsplash.com/photo-1454165833767-027eeef1593e?w=800&auto=format&fit=crop&q=60', // System marker image
                 latitude: locations.find(l => l.id === emp?.locationId)?.latitude || 0,
                 longitude: locations.find(l => l.id === emp?.locationId)?.longitude || 0
               });
@@ -1022,7 +1022,7 @@ const WorkforceHub: React.FC = () => {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-muted)' }}>TIMESTAMP</span>
-                  <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{new Date(selectedEvidence.timestamp || selectedEvidence.ts).toLocaleString()}</span>
+                  <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{new Date(selectedEvidence.createdAt || selectedEvidence.timestamp || selectedEvidence.ts || '').toLocaleString()}</span>
                 </div>
               </div>
             </div>

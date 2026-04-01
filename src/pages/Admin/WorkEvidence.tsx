@@ -39,7 +39,7 @@ const WorkEvidence: React.FC = () => {
   }).sort((a, b) => {
     if (a.status === 'pending' && b.status !== 'pending') return -1;
     if (b.status === 'pending' && a.status !== 'pending') return 1;
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    return new Date(b.createdAt || (b as any).timestamp || '').getTime() - new Date(a.createdAt || (a as any).timestamp || '').getTime();
   });
 
   const handleApprove = (id: string) => {
@@ -154,7 +154,7 @@ const WorkEvidence: React.FC = () => {
 
                     <div style={{ position: 'absolute', bottom: '1rem', right: '1rem', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', padding: '0.25rem 0.5rem', borderRadius: '8px', color: '#fff', fontSize: '0.7rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <LuClock size={12} />
-                      {new Date(report.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(report.createdAt || (report as any).timestamp || '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
 

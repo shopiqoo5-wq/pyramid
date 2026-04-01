@@ -330,12 +330,12 @@ const OpsCommandCenter: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
               {fieldIncidents.map(inc => {
                 const loc = locations.find(l => l.id === inc.locationId);
-                const emp = employees.find(e => e.id === inc.employeeId);
+                const emp = employees.find(e => e.userId === inc.userId);
                 return (
                   <Card key={inc.id} variant="glass" style={{ padding: '1.5rem', border: inc.status === 'Open' ? '1px solid var(--danger-light)' : '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                       <Badge variant={inc.severity === 'Critical' || inc.severity === 'High' ? 'danger' : 'info'}>{inc.severity} PRIORITY</Badge>
-                      <span style={{ fontSize: '0.65rem', opacity: 0.4, fontWeight: 800 }}>{new Date(inc.timestamp).toLocaleTimeString()}</span>
+                      <span style={{ fontSize: '0.65rem', opacity: 0.4, fontWeight: 800 }}>{new Date(inc.createdAt || (inc as any).timestamp || '').toLocaleTimeString()}</span>
                     </div>
                     <h3 style={{ fontSize: '1.2rem', fontWeight: 950, color: 'var(--text-main)', marginBottom: '0.5rem' }}>{inc.type} Anomaly</h3>
                     <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '1.5rem' }}>{inc.description}</p>
@@ -525,7 +525,7 @@ const OpsCommandCenter: React.FC = () => {
                   <Badge variant={incidentToResolve.severity === 'Critical' || incidentToResolve.severity === 'High' ? 'danger' : 'warning'}>
                     {incidentToResolve.severity} Anomaly
                   </Badge>
-                  <span style={{ fontSize: '0.65rem', fontWeight: 950, opacity: 0.4 }}>{new Date(incidentToResolve.timestamp).toLocaleString()}</span>
+                  <span style={{ fontSize: '0.65rem', fontWeight: 950, opacity: 0.4 }}>{new Date(incidentToResolve.createdAt || (incidentToResolve as any).timestamp || '').toLocaleString()}</span>
                 </div>
                 <h4 style={{ margin: 0, fontWeight: 950, fontSize: '1.1rem', color: 'var(--text-main)' }}>{incidentToResolve.type}</h4>
                 <p className="text-muted" style={{ fontSize: '0.85rem', fontWeight: 700, marginTop: '4px' }}>{incidentToResolve.description}</p>

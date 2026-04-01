@@ -58,7 +58,7 @@ const EmployeeDashboard: React.FC = () => {
 
   // Check if clocked in today
   const todaysAttendance = attendanceRecords.filter(r => 
-    r.employeeId === employee?.id && r.checkIn.startsWith(today)
+    r.employeeId === employee?.id && (r.checkIn || r.timestamp || '').startsWith(today)
   );
   const isClockedIn = todaysAttendance.length > 0 && !todaysAttendance[todaysAttendance.length - 1].checkOut;
 
@@ -81,7 +81,7 @@ const EmployeeDashboard: React.FC = () => {
     try {
       await submitAttendance({
         employeeId: employee.id,
-        imageUrl: data.imageUrl,
+        photoUrl: data.imageUrl,
         type: data.type,
         locationId: data.locationId,
         latitude: data.latitude,
@@ -194,7 +194,7 @@ const EmployeeDashboard: React.FC = () => {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>{emp?.name}</span>
-                    <span style={{ fontSize: '0.6rem', opacity: 0.4 }}>{new Date(report.timestamp).toLocaleTimeString()}</span>
+                    <span style={{ fontSize: '0.6rem', opacity: 0.4 }}>{new Date(report.createdAt || (report as any).timestamp || '').toLocaleTimeString()}</span>
                   </div>
                   <p style={{ fontSize: '0.75rem', opacity: 0.7, marginBottom: '1rem' }}>{report.remarks}</p>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>

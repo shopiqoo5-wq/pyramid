@@ -89,7 +89,7 @@ const Timesheets: React.FC<TimesheetsProps> = ({ isTab = false }) => {
       employeeId: newEmpId,
       checkIn: new Date(newCheckIn).toISOString(),
       checkOut: newCheckOut ? new Date(newCheckOut).toISOString() : undefined,
-      imageUrl: '',
+      photoUrl: '',
       status: newStatus,
       verified: true,
       geofenceVerified: false

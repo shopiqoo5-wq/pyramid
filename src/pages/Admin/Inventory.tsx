@@ -315,7 +315,7 @@ const AdminInventory: React.FC = () => {
                            </div>
                            <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 800 }}>{log.type.replace(/_/g, ' ')}</div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(log.timestamp).toLocaleString()} | Officer: {users.find(u => u.id === log.performedBy)?.name || 'System'}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(log.createdAt || (log as any).timestamp || '').toLocaleString()} | Officer: {users.find(u => u.id === log.performedBy)?.name || 'System'}</div>
                            </div>
                            <div style={{ textAlign: 'right' }}>
                               <div style={{ fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
