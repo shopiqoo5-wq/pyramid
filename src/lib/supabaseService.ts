@@ -143,7 +143,8 @@ export const SupabaseService = {
   },
 
   async updateStock(productId: string, warehouseId: string, quantity: number) {
-    await supabase.from('inventory').update({ quantity }).match({ product_id: productId, warehouse_id: warehouseId });
+    const { error } = await supabase.from('inventory').update({ quantity }).match({ product_id: productId, warehouse_id: warehouseId });
+    if (error) throw error;
   },
 
   // --- CONTRACTS ---
@@ -216,11 +217,13 @@ export const SupabaseService = {
   },
   
   async addInventoryLog(log: any) {
-    await supabase.from('inventory_logs').insert(camelToSnake(log));
+    const { error } = await supabase.from('inventory_logs').insert(camelToSnake(log));
+    if (error) throw error;
   },
 
   async reportException(exception: any) {
-    await supabase.from('exceptions').insert(camelToSnake(exception));
+    const { error } = await supabase.from('exceptions').insert(camelToSnake(exception));
+    if (error) throw error;
   },
 
   async resolveException(id: string) {
@@ -234,7 +237,8 @@ export const SupabaseService = {
 
   // --- FRAUD ---
   async flagFraud(flag: any) {
-    await supabase.from('fraud_flags').insert(camelToSnake(flag));
+    const { error } = await supabase.from('fraud_flags').insert(camelToSnake(flag));
+    if (error) throw error;
   },
 
   async updateFraudStatus(id: string, status: string) {
@@ -248,7 +252,8 @@ export const SupabaseService = {
 
   // --- COMPLIANCE ---
   async addComplianceDoc(doc: any) {
-    await supabase.from('compliance_docs').insert(camelToSnake(doc));
+    const { error } = await supabase.from('compliance_docs').insert(camelToSnake(doc));
+    if (error) throw error;
   },
 
   async deleteComplianceDoc(id: string) {
@@ -268,7 +273,8 @@ export const SupabaseService = {
   },
 
   async addNotification(notification: any) {
-    await supabase.from('notifications').insert(camelToSnake(notification));
+    const { error } = await supabase.from('notifications').insert(camelToSnake(notification));
+    if (error) throw error;
   },
 
   async markNotificationRead(id: string) {
@@ -369,7 +375,8 @@ export const SupabaseService = {
   },
 
   async submitIncident(incident: any) {
-    await supabase.from('field_incidents').insert(camelToSnake(incident));
+    const { error } = await supabase.from('field_incidents').insert(camelToSnake(incident));
+    if (error) throw error;
   },
 
   async updateIncidentStatus(id: string, updates: any) {
@@ -383,7 +390,8 @@ export const SupabaseService = {
   },
 
   async submitWorkReport(report: any) {
-    await supabase.from('work_reports').insert(camelToSnake(report));
+    const { error } = await supabase.from('work_reports').insert(camelToSnake(report));
+    if (error) throw error;
   },
 
   async updateWorkReport(id: string, updates: any) {
@@ -643,5 +651,56 @@ export const SupabaseService = {
       arr[i] = binStr.charCodeAt(i);
     }
     return new Blob([arr], { type });
+  },
+
+  // --- FAVORITES ---
+  async getFavorites(companyId: string) {
+    const { data, error } = await supabase.from('favorites').select('*').eq('company_id', companyId);
+    if (error) throw error;
+    return snakeToCamel(data || []);
+  },
+
+  async addFavorite(favorite: any) {
+    const { error } = await supabase.from('favorites').insert(camelToSnake(favorite));
+    if (error) throw error;
+  },
+
+  async deleteFavorite(id: string) {
+    const { error } = await supabase.from('favorites').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- API KEYS ---
+  async getAPIKeys(companyId: string) {
+    const { data, error } = await supabase.from('api_keys').select('*').eq('company_id', companyId);
+    if (error) throw error;
+    return snakeToCamel(data || []);
+  },
+
+  async addAPIKey(key: any) {
+    const { error } = await supabase.from('api_keys').insert(camelToSnake(key));
+    if (error) throw error;
+  },
+
+  async deleteAPIKey(id: string) {
+    const { error } = await supabase.from('api_keys').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- PHOTO VERIFICATIONS ---
+  async getPhotoVerifications() {
+    const { data, error } = await supabase.from('photo_verifications').select('*');
+    if (error) throw error;
+    return snakeToCamel(data || []);
+  },
+
+  async addPhotoVerification(photo: any) {
+    const { error } = await supabase.from('photo_verifications').insert(camelToSnake(photo));
+    if (error) throw error;
+  },
+
+  async updatePhotoVerification(id: string, updates: any) {
+    const { error } = await supabase.from('photo_verifications').update(camelToSnake(updates)).eq('id', id);
+    if (error) throw error;
   }
 };

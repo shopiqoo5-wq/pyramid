@@ -182,6 +182,36 @@ CREATE TABLE IF NOT EXISTS public.inventory_logs (
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- NEW: Photo Verifications
+CREATE TABLE IF NOT EXISTS public.photo_verifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+    image_url TEXT NOT NULL,
+    remarks TEXT,
+    status TEXT DEFAULT 'pending', -- pending, approved, rejected
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- NEW: API Keys
+CREATE TABLE IF NOT EXISTS public.api_keys (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    key_value TEXT UNIQUE NOT NULL,
+    permissions TEXT[], -- array of strings like ['read', 'write']
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- NEW: Favorites
+CREATE TABLE IF NOT EXISTS public.favorites (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES public.products(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, product_id)
+);
+
 -- 4. COMMERCE LIFECYCLE
 -- ORDERS
 CREATE TABLE IF NOT EXISTS public.orders (
@@ -741,6 +771,65 @@ CREATE POLICY "Message Stream" ON public.ticket_messages FOR ALL TO authenticate
 -- System Intel (Admin strictly restricted)
 CREATE POLICY "Admin Audit" ON public.audit_logs FOR ALL TO authenticated USING (public.get_role() = 'admin');
 CREATE POLICY "Admin Fraud" ON public.fraud_flags FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Admin Inventory Logs" ON public.inventory_logs FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Auth View Inventory Logs" ON public.inventory_logs FOR SELECT TO authenticated USING (true);
+
+
+-- User & Profile Security
+CREATE POLICY "Users View Own" ON public.users FOR SELECT TO authenticated USING (id = auth.uid());
+CREATE POLICY "Admin All Users" ON public.users FOR ALL TO authenticated USING (public.get_role() = 'admin');
+
+-- Inventory & Warehousing
+CREATE POLICY "Auth View Inventory" ON public.inventory FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admin All Inventory" ON public.inventory FOR ALL TO authenticated USING (public.get_role() = 'admin');
+
+CREATE POLICY "Auth View Warehouses" ON public.warehouses FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admin All Warehouses" ON public.warehouses FOR ALL TO authenticated USING (public.get_role() = 'admin');
+
+-- Workforce Management
+CREATE POLICY "Admin All Employees" ON public.employees FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Employee View Self" ON public.employees FOR SELECT TO authenticated USING (user_id = auth.uid() OR public.get_role() = 'admin');
+
+CREATE POLICY "Admin All Shifts" ON public.employee_shifts FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Employee View Own Shifts" ON public.employee_shifts FOR SELECT TO authenticated 
+  USING (employee_id = public.get_employee_id() OR public.get_role() = 'admin');
+
+CREATE POLICY "Admin All Time Off" ON public.time_off_requests FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Employee Own Time Off" ON public.time_off_requests FOR ALL TO authenticated 
+  USING (employee_id = public.get_employee_id() OR public.get_role() = 'admin');
+
+-- Site Ops
+CREATE POLICY "Admin All Protocols" ON public.site_protocols FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Auth View Protocols" ON public.site_protocols FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Admin All Assignments" ON public.work_assignments FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Auth View Assignments" ON public.work_assignments FOR SELECT TO authenticated USING (true);
+
+-- System & Settings
+CREATE POLICY "Admin All Settings" ON public.custom_roles FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Auth View Roles" ON public.custom_roles FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Admin All Compliance" ON public.compliance_docs FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Auth View Compliance" ON public.compliance_docs FOR SELECT TO authenticated USING (true);
+
+-- User Own Notifications
+CREATE POLICY "User Own Notifications" ON public.notifications FOR ALL TO authenticated 
+  USING (user_id = auth.uid() OR public.get_role() = 'admin');
+
+-- Photo Verifications
+CREATE POLICY "Auth View Photos" ON public.photo_verifications FOR SELECT TO authenticated 
+  USING (company_id = public.get_my_company() OR public.get_role() = 'admin');
+CREATE POLICY "Auth Add Photos" ON public.photo_verifications FOR INSERT TO authenticated 
+  WITH CHECK (company_id = public.get_my_company() OR public.get_role() = 'admin');
+
+-- API Keys
+CREATE POLICY "Admin All Keys" ON public.api_keys FOR ALL TO authenticated USING (public.get_role() = 'admin');
+CREATE POLICY "Company Keys View" ON public.api_keys FOR SELECT TO authenticated 
+  USING (company_id = public.get_my_company() OR public.get_role() = 'admin');
+
+-- Favorites
+CREATE POLICY "User Own Favorites" ON public.favorites FOR ALL TO authenticated 
+  USING (user_id = auth.uid() OR public.get_role() = 'admin');
 
 -- 8. SAMPLE SEED DATA
 SET session_replication_role = 'replica';

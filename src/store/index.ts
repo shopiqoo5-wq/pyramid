@@ -81,10 +81,10 @@ interface AppState {
   placeOrder: (orderStart: Partial<Order>) => Promise<void>;
 
   // New Actions
-  toggleFavorite: (productId: string, companyId: string) => void;
-  logAction: (userId: string, action: string, details: string) => void;
-  addNotification: (notification: Omit<Notification, 'id' | 'createdAt' | 'read'>) => void;
-  markNotificationAsRead: (id: string) => void;
+  toggleFavorite: (productId: string, companyId: string) => Promise<void>;
+  logAction: (userId: string, action: string, details: string) => Promise<void>;
+  addNotification: (notification: Omit<Notification, 'id' | 'createdAt' | 'read'>) => Promise<void>;
+  markNotificationAsRead: (id: string) => Promise<void>;
   
   // Alerts (Toasts)
   addAlert: (alert: Omit<Toast, 'id'>) => void;
@@ -186,11 +186,11 @@ interface AppState {
   employeeShifts: EmployeeShift[];
 
   // Phase 7 Actions
-  createReturn: (req: Omit<ReturnRequest, 'id' | 'createdAt' | 'status'>) => void;
-  updateReturnStatus: (id: string, status: ReturnRequest['status']) => void;
-  generateAPIKey: (companyId: string, permissions: APIKey['permissions']) => APIKey;
-  revokeAPIKey: (id: string) => void;
-  uploadVerificationPhoto: (photo: Partial<PhotoVerification>) => void;
+  createReturn: (req: Omit<ReturnRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
+  updateReturnStatus: (id: string, status: ReturnRequest['status']) => Promise<void>;
+  generateAPIKey: (companyId: string, permissions: APIKey['permissions']) => Promise<APIKey>;
+  revokeAPIKey: (id: string) => Promise<void>;
+  uploadVerificationPhoto: (photo: Partial<PhotoVerification>) => Promise<void>;
 
   // Settings
   updateSettings: (newSettings: Partial<GlobalSettings>) => void;
@@ -217,9 +217,9 @@ interface AppState {
   updateTimeOffStatus: (id: string, status: TimeOffRequest['status'], adminRemarks?: string) => Promise<void>;
   submitAttendance: (record: { employeeId: string; photoUrl: string; checkOut?: string; locationId?: string; type?: 'in' | 'out'; latitude?: number; longitude?: number; metadata?: any }, isBase64?: boolean) => Promise<void>;
   recordAttendance: (record: { employeeId: string; photoUrl: string; checkOut?: string; locationId?: string; type?: 'in' | 'out'; latitude?: number; longitude?: number; metadata?: any }, isBase64?: boolean) => Promise<void>;
-  updateAttendanceRecord: (id: string, updates: Partial<AttendanceRecord>) => void;
-  deleteAttendanceRecord: (id: string) => void;
-  createManualTimesheet: (record: Omit<AttendanceRecord, 'id'>) => void;
+  updateAttendanceRecord: (id: string, updates: Partial<AttendanceRecord>) => Promise<void>;
+  deleteAttendanceRecord: (id: string) => Promise<void>;
+  createManualTimesheet: (record: Omit<AttendanceRecord, 'id'>) => Promise<void>;
 
   // Phase 49: GPS & QR Management
   generateLocationQR: (locationId: string) => void;
@@ -376,22 +376,16 @@ export const useStore = create<AppState>()(
     await supabase.auth.signOut();
     get().addAlert({ message: 'Logged out successfully.', type: 'info' });
     
-    // Clear all operational state on logout to prevent data leakage between sessions
+    // Signed out users see restricted view, but we keep the local state 
+    // to fulfill the user's request for permanent historical visibility.
     set({ 
       currentUser: null, 
       cart: [],
-      orders: [],
-      attendanceRecords: [],
-      workReports: [],
-      fieldIncidents: [],
-      auditLogs: [],
-      inventoryLogs: [],
-      timeOffRequests: [],
-      employeeShifts: [],
-      notifications: [],
+      // We no longer nuke history here, as the user wants logs to be permanent.
+      // Hydration from Supabase on next login will refresh these.
     });
     
-    // Re-run init to restore base state
+    // Explicitly re-check connection status
     await get().initSupabase();
   },
 
@@ -475,6 +469,9 @@ export const useStore = create<AppState>()(
           set({ dailyTaskProgress: progress, submittedChecklists: status });
         }, 'submittedChecklists'),
         fetchData('Batches', SupabaseService.getBatches, (d) => set({ batches: d }), 'batches'),
+        fetchData('Favorites', () => get().currentUser ? SupabaseService.getFavorites(get().currentUser!.id) : Promise.resolve([]), (d) => set({ favorites: d }), 'favorites'),
+        fetchData('API Keys', () => get().currentUser?.companyId ? SupabaseService.getAPIKeys(get().currentUser!.companyId!) : Promise.resolve([]), (d) => set({ apiKeys: d }), 'apiKeys'),
+        fetchData('Photos', SupabaseService.getPhotoVerifications, (d) => set({ photos: d }), 'photos'),
       ]);
 
       const user = get().currentUser;
@@ -684,7 +681,7 @@ export const useStore = create<AppState>()(
   clearCart: () => set({ cart: [] }),
 
   // Phase 7 Actions
-  createReturn: (req) => set(state => {
+  createReturn: async (req) => {
     const newReturn = {
       ...req,
       id: `RET-${Date.now()}`,
@@ -692,101 +689,108 @@ export const useStore = create<AppState>()(
       createdAt: new Date().toISOString()
     };
     if (get().isSupabaseConnected) {
-      SupabaseService.createReturnRequest(newReturn).then();
+      await SupabaseService.createReturnRequest(newReturn);
     }
     get().addAlert({ message: 'Return request submitted successfully!', type: 'success' });
-    return { returnRequests: [newReturn, ...state.returnRequests] };
-  }),
-  updateReturnStatus: (id, status) => set(state => {
-    const request = state.returnRequests.find(r => r.id === id);
-    if (!request || request.status === status) return state;
-
-    let newState = { ...state };
+    set(state => ({ returnRequests: [newReturn, ...state.returnRequests] }));
+  },
+  updateReturnStatus: async (id, status) => {
+    const { returnRequests, isSupabaseConnected, addNotification, logAction, addAlert, companies, orders, products } = get();
+    const request = returnRequests.find(r => r.id === id);
+    if (!request || request.status === status) return;
 
     if (status === 'approved' && request.status === 'pending') {
       // 1. Process Credits
-      const company = state.companies.find(c => c.id === request.companyId);
-      const order = state.orders.find(o => o.customId === request.orderId);
+      const company = companies.find(c => c.id === request.companyId);
+      const order = orders.find(o => o.customId === request.orderId);
       
       if (company && order) {
         let totalReturnVal = 0;
         request.items.forEach(retItem => {
           const orderItem = order.items.find(oi => oi.productId === retItem.productId);
           if (orderItem) {
-            totalReturnVal += (orderItem.unitPrice * retItem.quantity) * (1 + (state.products.find(p => p.id === retItem.productId)?.gstRate || 0) / 100);
+            totalReturnVal += (orderItem.unitPrice * retItem.quantity) * (1 + (products.find(p => p.id === retItem.productId)?.gstRate || 0) / 100);
           }
         });
 
-        newState.companies = state.companies.map(c => 
-          c.id === company.id 
-            ? { ...c, availableCredit: (c.availableCredit || 0) + totalReturnVal } 
-            : c
-        );
+        set(state => ({
+          companies: state.companies.map(c => 
+            c.id === company.id 
+              ? { ...c, availableCredit: (c.availableCredit || 0) + totalReturnVal } 
+              : c
+          )
+        }));
 
-        get().logAction('admin', 'return_approved', `Approved return ${id}. Credited ₹${totalReturnVal.toFixed(2)} to ${company.name}`);
+        await logAction('admin', 'return_approved', `Approved return ${id}. Credited ₹${totalReturnVal.toFixed(2)} to ${company.name}`);
         
-        get().addNotification({
+        await addNotification({
           userId: request.requestedBy,
           title: 'Return Approved',
           message: `Your return request for order ${request.orderId} was approved. ₹${totalReturnVal.toFixed(2)} has been credited back to your account.`,
           type: 'success'
         });
-        get().addAlert({ message: `Return ${id} approved. Credit issued.`, type: 'success' });
+        addAlert({ message: `Return ${id} approved. Credit issued.`, type: 'success' });
       }
 
       // 2. Process Inventory (optional: only if not damaged)
       if (request.reason !== 'Damaged') {
-        request.items.forEach(item => {
+        for (const item of request.items) {
           // Add back to default warehouse for simplicity or use the one from the order
           const warehouseId = order?.warehouseId || 'w1';
-          get().updateStock(item.productId, warehouseId, item.quantity, `Return Restock (${id})`, 'system');
-        });
+          await get().updateStock(item.productId, warehouseId, item.quantity, `Return Restock (${id})`, 'system');
+        }
       }
     } else if (status === 'rejected') {
-      get().addAlert({ message: `Return ${id} rejected.`, type: 'error' });
+      addAlert({ message: `Return ${id} rejected.`, type: 'error' });
     }
 
-    if (get().isSupabaseConnected) {
-      SupabaseService.updateReturnStatus(id, status).then();
+    if (isSupabaseConnected) {
+      await SupabaseService.updateReturnStatus(id, status);
     }
 
-    return {
-      ...newState,
+    set(state => ({
       returnRequests: state.returnRequests.map(r => r.id === id ? { ...r, status } : r)
-    };
-  }),
-  generateAPIKey: (companyId, permissions) => {
-    // SEC-06: use secureToken() — never Math.random() for API keys
+    }));
+  },
+  generateAPIKey: async (companyId, permissions) => {
     const newKey = {
-      id: `AK-${Date.now()}`,
+      id: generateUUID(),
       companyId,
       key: `sk_live_${secureToken(24)}`,
       permissions,
       createdAt: new Date().toISOString()
     };
+    if (get().isSupabaseConnected) {
+      await SupabaseService.addAPIKey(newKey);
+    }
     set(state => ({ apiKeys: [...state.apiKeys, newKey] }));
     get().addAlert({ message: 'New API key generated!', type: 'success' });
     return newKey as any;
   },
-  revokeAPIKey: (id) => set(state => {
-    get().addAlert({ message: 'API key revoked.', type: 'info' });
-    return {
+  revokeAPIKey: async (id) => {
+    if (get().isSupabaseConnected) {
+      await SupabaseService.deleteAPIKey(id);
+    }
+    set(state => ({
       apiKeys: state.apiKeys.filter(k => k.id !== id)
+    }));
+    get().addAlert({ message: 'API key revoked.', type: 'info' });
+  },
+  uploadVerificationPhoto: async (photo: any) => {
+    const newPhoto = {
+      ...photo,
+      id: generateUUID(),
+      status: 'pending' as const,
+      createdAt: new Date().toISOString()
     };
-  }),
-  uploadVerificationPhoto: (photo: any) => set(state => {
+    if (get().isSupabaseConnected) {
+      await SupabaseService.addPhotoVerification(newPhoto);
+    }
+    set(state => ({
+      photos: [newPhoto as PhotoVerification, ...state.photos]
+    }));
     get().addAlert({ message: 'Verification photo uploaded. Awaiting approval.', type: 'info' });
-    return {
-      photos: [{
-        ...photo,
-        id: `PHO-${Date.now()}`,
-        imageUrl: 'https://images.unsplash.com/photo-1584820927498-cafe8c160826?w=200&h=200&fit=crop', 
-        remarks: 'Main lobby area sanitized.', 
-        status: 'pending' as const,
-        createdAt: new Date().toISOString()
-      }, ...state.photos]
-    };
-  }),
+  },
 
   updateOrderStatus: async (orderId, status) => {
     const { orders, users, addNotification, logAction, addAlert } = get();
@@ -819,6 +823,9 @@ export const useStore = create<AppState>()(
     set((state) => ({
       orders: state.orders.map(o => o.id === orderId ? { ...o, status } : o)
     }));
+    
+    const oldStatus = order.status;
+    get().processInventoryMovement(orderId, oldStatus, status);
   },
 
   placeOrder: async (orderStart) => {
@@ -950,15 +957,23 @@ export const useStore = create<AppState>()(
       get().logAction('admin', 'biometric_enrollment', `Registered face image for user ${userId}`);
     },
 
-   toggleFavorite: (productId, companyId) => set((state) => {
-    const existing = state.favorites.find(f => f.productId === productId && f.companyId === companyId);
+   toggleFavorite: async (productId, companyId) => {
+    const existing = get().favorites.find(f => f.productId === productId && f.companyId === companyId);
     if (existing) {
-      return { favorites: state.favorites.filter(f => f.id !== existing.id) };
+      if (get().isSupabaseConnected) {
+        await SupabaseService.deleteFavorite(existing.id);
+      }
+      set(state => ({ favorites: state.favorites.filter(f => f.id !== existing.id) }));
+    } else {
+      const newFav = { id: generateUUID(), productId, companyId, userId: get().currentUser?.id };
+      if (get().isSupabaseConnected) {
+        await SupabaseService.addFavorite(newFav);
+      }
+      set(state => ({
+        favorites: [...state.favorites, newFav]
+      }));
     }
-    return {
-      favorites: [...state.favorites, { id: `fav-${Date.now()}`, productId, companyId }]
-    };
-  }),
+  },
 
   logAction: async (userId, action, details) => {
     if (get().isSupabaseConnected) {
@@ -1171,7 +1186,72 @@ export const useStore = create<AppState>()(
     }));
   },
 
-  processInventoryMovement: (orderId, fromStatus, toStatus) => {
+  updateStock: async (productId, warehouseId, quantityDelta, reason = 'Manual Adjustment', userId = 'admin', batchId) => {
+    const actorId = userId || get().currentUser?.id || 'system';
+    const { inventory, products, isSupabaseConnected } = get();
+    const inv = inventory.find(i => i.productId === productId && i.warehouseId === warehouseId);
+    if (!inv) return;
+
+    const previousQuantity = inv.quantity;
+    const newQuantity = Math.max(0, previousQuantity + quantityDelta);
+    const availableQuantity = (inv.availableQuantity ?? previousQuantity) + quantityDelta;
+    const timestamp = new Date().toISOString();
+
+    const newLog: InventoryLog = {
+      id: generateUUID(),
+      productId,
+      warehouseId,
+      type: quantityDelta > 0 ? 'REFILL' : 'SALE',
+      change: Math.abs(quantityDelta),
+      previousQuantity,
+      newQuantity,
+      referenceId: batchId || 'MANUAL',
+      performedBy: actorId,
+      createdAt: timestamp,
+      notes: reason
+    };
+
+    if (isSupabaseConnected) {
+      SupabaseService.updateStock(productId, warehouseId, newQuantity).then();
+      SupabaseService.addInventoryLog(newLog).then();
+    }
+
+    set(state => {
+      let newBatches = state.batches;
+      if (batchId) {
+        newBatches = state.batches.map(b => 
+          b.id === batchId ? { ...b, quantity: Math.max(0, b.quantity + quantityDelta) } : b
+        );
+      }
+
+      return {
+        inventory: state.inventory.map(i => 
+          (i.productId === productId && i.warehouseId === warehouseId) 
+            ? { ...i, quantity: newQuantity, availableQuantity } 
+            : i
+        ),
+        batches: newBatches,
+        inventoryLogs: [newLog, ...state.inventoryLogs].slice(0, 1000)
+      };
+    });
+
+    get().checkLowStock().then();
+    const product = products.find(p => p.id === productId);
+    get().logAction(actorId, 'inventory_adjustment', `Adjusted ${product?.name || productId} stock in ${warehouseId} by ${quantityDelta}. Reason: ${reason}`);
+
+    if (newQuantity <= (inv.lowStockThreshold || 0)) {
+       const adminEmail = get().settings.supportEmail || 'admin@pyramidfm.com';
+       EmailTemplates.lowStockAlert(adminEmail, product?.name || productId, newQuantity, inv.lowStockThreshold || 0).then();
+    }
+  },
+
+  transferStock: async (productId, fromWarehouseId, toWarehouseId, quantity) => {
+    const { updateStock } = get();
+    await updateStock(productId, fromWarehouseId, -quantity, `Transfer to ${toWarehouseId}`);
+    await updateStock(productId, toWarehouseId, quantity, `Transfer from ${fromWarehouseId}`);
+  },
+
+  processInventoryMovement: async (orderId, fromStatus, toStatus) => {
     const order = get().orders.find(o => o.id === orderId);
     if (!order) return;
 
@@ -1207,8 +1287,7 @@ export const useStore = create<AppState>()(
            quantity -= qty; // Physical stock leaves warehouse
            
            // Log the movement
-           state.inventoryLogs = [{
-             id: `log-${Date.now()}-${inv.productId}`,
+           const log: any = {
              productId: inv.productId,
              warehouseId: inv.warehouseId,
              type: 'SALE' as any,
@@ -1217,8 +1296,17 @@ export const useStore = create<AppState>()(
              newQuantity: quantity,
              referenceId: order.customId,
              performedBy: 'SYSTEM',
-             createdAt: new Date().toISOString(),
              notes: `Order ${order.customId} dispatched.`
+           };
+
+           if (get().isSupabaseConnected) {
+             SupabaseService.addInventoryLog(log).then();
+           }
+
+           state.inventoryLogs = [{
+             ...log,
+             id: `log-${Date.now()}-${inv.productId}`,
+             createdAt: new Date().toISOString()
            }, ...state.inventoryLogs].slice(0, 1000);
         }
         // 4. Delivery (In-Transit -> Finalized)
@@ -1234,8 +1322,7 @@ export const useStore = create<AppState>()(
             availableQuantity += qty; // And becomes available
             
             // Log the return to stock
-            state.inventoryLogs = [{
-              id: `log-${Date.now()}-${inv.productId}`,
+            const log: any = {
               productId: inv.productId,
               warehouseId: inv.warehouseId,
               type: 'RETURN' as any,
@@ -1244,8 +1331,17 @@ export const useStore = create<AppState>()(
               newQuantity: quantity,
               referenceId: order.customId,
               performedBy: 'SYSTEM',
-              createdAt: new Date().toISOString(),
               notes: `Order ${order.customId} ${toStatus}. Stock returned.`
+            };
+
+            if (get().isSupabaseConnected) {
+              SupabaseService.addInventoryLog(log).then();
+            }
+
+            state.inventoryLogs = [{
+              ...log,
+              id: `log-${Date.now()}-${inv.productId}`,
+              createdAt: new Date().toISOString()
             }, ...state.inventoryLogs].slice(0, 1000);
           } else if (fromStatus !== 'delivered') { // If not yet dispatched or delivered
             reservedQuantity -= qty;
@@ -1404,65 +1500,7 @@ export const useStore = create<AppState>()(
     set({ clientPricing: newPricing });
   },
 
-  updateStock: async (productId: string, warehouseId: string, quantityDelta: number, reason?: string, userId?: string, batchId?: string) => {
-    const actorId = userId || get().currentUser?.id || 'system';
-    const state = get();
-    const item = state.inventory.find(i => i.productId === productId && i.warehouseId === warehouseId);
-    const previousQty = item?.quantity || 0;
-    const newQty = Math.max(0, previousQty + quantityDelta);
-    const timestamp = new Date().toISOString();
 
-    const newLog: InventoryLog = {
-      id: generateUUID(),
-      productId,
-      warehouseId,
-      type: quantityDelta > 0 ? 'REFILL' : 'SALE',
-      change: Math.abs(quantityDelta),
-      previousQuantity: previousQty,
-      newQuantity: newQty,
-      referenceId: batchId || 'MANUAL',
-      performedBy: actorId,
-      createdAt: timestamp,
-      notes: reason || 'Manual adjustment'
-    };
-
-    set((state) => {
-      let newBatches = state.batches;
-      if (batchId) {
-        newBatches = state.batches.map(b => 
-          b.id === batchId ? { ...b, quantity: Math.max(0, b.quantity + quantityDelta) } : b
-        );
-      }
-
-      return {
-        inventory: state.inventory.map(i => 
-          i.productId === productId && i.warehouseId === warehouseId 
-            ? { 
-                ...i, 
-                quantity: newQty, 
-                availableQuantity: (i.availableQuantity ?? i.quantity) + quantityDelta 
-              } 
-            : i
-        ),
-        batches: newBatches,
-        inventoryLogs: [newLog, ...state.inventoryLogs].slice(0, 1000)
-      };
-    });
-    
-    get().checkLowStock();
-    const product = get().products.find(p => p.id === productId);
-    get().logAction(actorId, 'inventory_adjustment', `Adjusted ${product?.name || productId} stock in ${warehouseId} by ${quantityDelta}. Reason: ${reason}`);
-
-    if (get().isSupabaseConnected) {
-      SupabaseService.updateStock(productId, warehouseId, newQty).then();
-      SupabaseService.addInventoryLog(newLog).then();
-    }
-
-    if (newQty <= (item?.lowStockThreshold || 0)) {
-       const adminEmail = get().settings.supportEmail || 'admin@pyramidfm.com';
-       EmailTemplates.lowStockAlert(adminEmail, product?.name || productId, newQty, item?.lowStockThreshold || 0).then();
-    }
-  },
 
   calculateDemandForecast: (productId) => {
     const orders = get().orders;
@@ -1514,77 +1552,6 @@ export const useStore = create<AppState>()(
     await get().updateStock(newBatch.productId, newBatch.warehouseId, newBatch.quantity, 'Manual Batch Entry');
   },
 
-  transferStock: (productId, fromWarehouseId, toWarehouseId, quantity) => {
-    const userId = get().currentUser?.id || 'admin';
-    const timestamp = new Date().toISOString();
-    const state = get();
-    
-    const fromItem = state.inventory.find(i => i.productId === productId && i.warehouseId === fromWarehouseId);
-    const toItem = state.inventory.find(i => i.productId === productId && i.warehouseId === toWarehouseId);
-    
-    if (!fromItem || fromItem.quantity < quantity) {
-      console.error('Insufficient stock for transfer');
-      return;
-    }
-
-    const prevFromQty = fromItem.quantity;
-    const newFromQty = fromItem.quantity - quantity;
-    const prevToQty = toItem?.quantity || 0;
-    const newToQty = prevToQty + quantity;
-
-    const logOut: InventoryLog = {
-      id: generateUUID(),
-      productId,
-      warehouseId: fromWarehouseId,
-      type: 'TRANSFER_OUT',
-      change: -quantity,
-      previousQuantity: prevFromQty,
-      newQuantity: newFromQty,
-      referenceId: `TRF-${fromWarehouseId}-${toWarehouseId}`,
-      performedBy: userId,
-      createdAt: timestamp,
-      notes: `Transfer to ${toWarehouseId}`
-    };
-
-    const logIn: InventoryLog = {
-      id: generateUUID(),
-      productId,
-      warehouseId: toWarehouseId,
-      type: 'TRANSFER_IN',
-      change: quantity,
-      previousQuantity: prevToQty,
-      newQuantity: newToQty,
-      referenceId: `TRF-${fromWarehouseId}-${toWarehouseId}`,
-      performedBy: userId,
-      createdAt: timestamp,
-      notes: `Transfer from ${fromWarehouseId}`
-    };
-
-    set((state) => ({
-      inventory: state.inventory.map(i => {
-        if (i.productId === productId && i.warehouseId === fromWarehouseId) {
-          return { ...i, quantity: newFromQty, availableQuantity: (i.availableQuantity ?? i.quantity) - quantity };
-        }
-        if (i.productId === productId && i.warehouseId === toWarehouseId) {
-          return { ...i, quantity: newToQty, availableQuantity: (i.availableQuantity ?? i.quantity) + quantity };
-        }
-        return i;
-      }),
-      inventoryLogs: [logIn, logOut, ...state.inventoryLogs].slice(0, 1000)
-    }));
-
-    if (get().isSupabaseConnected) {
-      Promise.all([
-        SupabaseService.updateStock(productId, fromWarehouseId, newFromQty),
-        SupabaseService.updateStock(productId, toWarehouseId, newToQty),
-        SupabaseService.addInventoryLog(logOut),
-        SupabaseService.addInventoryLog(logIn)
-      ]).catch(err => console.error('Transfer Sync Failed:', err));
-    }
-
-    const product = get().products.find(p => p.id === productId);
-    get().logAction(userId, 'inventory_transfer', `Transferred ${quantity} ${product?.uom || 'units'} of ${product?.name} from ${fromWarehouseId} to ${toWarehouseId}`);
-  },
 
   getBatchesForProduct: (productId) => {
     return get().batches.filter(b => b.productId === productId);
