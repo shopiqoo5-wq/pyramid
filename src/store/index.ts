@@ -280,6 +280,9 @@ export const useStore = create<AppState>()(
       status: 'Draft',
       createdAt: new Date().toISOString()
     };
+    if (get().isSupabaseConnected) {
+      await SupabaseService.addQuotation(newQuotation);
+    }
     set(state => ({ quotations: [newQuotation, ...state.quotations] }));
     get().addAlert({ message: 'Quotation generated successfully!', type: 'success' });
   },
@@ -455,7 +458,29 @@ export const useStore = create<AppState>()(
         fetchData('Roles', SupabaseService.getCustomRoles, (d) => set({ customRoles: d }), 'customRoles'),
         fetchData('Audit Logs', SupabaseService.getAuditLogs, (d) => set({ auditLogs: d }), 'auditLogs'),
         fetchData('Inventory Logs', SupabaseService.getInventoryLogs, (d) => set({ inventoryLogs: d }), 'inventoryLogs'),
+        fetchData('Quotations', SupabaseService.getQuotations, (d) => set({ quotations: d }), 'quotations'),
+        fetchData('Tickets', () => SupabaseService.getTickets(), (d) => set({ supportTickets: d }), 'supportTickets'),
+        fetchData('Recurring Orders', () => SupabaseService.getRecurringOrders(), (d) => set({ recurringOrders: d }), 'recurringOrders'),
+        fetchData('Webhooks', SupabaseService.getWebhooks, (d) => set({ webhooks: d }), 'webhooks'),
+        fetchData('Compliance Docs', () => SupabaseService.getComplianceDocs(), (d) => set({ complianceDocs: d }), 'complianceDocs'),
+        fetchData('Fraud Flags', SupabaseService.getFraudFlags, (d) => set({ fraudFlags: d }), 'fraudFlags'),
+        fetchData('Exceptions', SupabaseService.getExceptions, (d) => set({ exceptions: d }), 'exceptions'),
+        fetchData('Daily Checklists', SupabaseService.getDailyChecklists, (d) => {
+          const progress: Record<string, string[]> = {};
+          const status: Record<string, string> = {};
+          d.forEach((item: any) => {
+            progress[item.employeeId] = item.completedTasks;
+            status[item.employeeId] = item.timestamp;
+          });
+          set({ dailyTaskProgress: progress, submittedChecklists: status });
+        }, 'submittedChecklists'),
+        fetchData('Batches', SupabaseService.getBatches, (d) => set({ batches: d }), 'batches'),
       ]);
+
+      const user = get().currentUser;
+      if (user) {
+        await fetchData(`${user.name} Notifications`, () => SupabaseService.getNotifications(user.id), (d) => set({ notifications: d }), 'notifications');
+      }
 
       // Attempt to restore session
       try {
@@ -950,34 +975,68 @@ export const useStore = create<AppState>()(
     }));
   },
 
-  addNotification: (notification) => set((state) => ({
-    notifications: [{
+  addNotification: async (notification) => {
+    const newNotif = {
       ...notification,
-      id: `notif-${Date.now()}`,
+      id: generateUUID(),
       read: false,
       createdAt: new Date().toISOString()
-    }, ...state.notifications]
-  })),
+    };
+    if (get().isSupabaseConnected) {
+      await SupabaseService.addNotification(newNotif);
+    }
+    set((state) => ({
+      notifications: [newNotif as Notification, ...state.notifications]
+    }));
+  },
 
-  markNotificationAsRead: (id) => set((state) => ({
-    notifications: state.notifications.map(n => n.id === id ? { ...n, read: true } : n)
-  })),
+  markNotificationAsRead: async (id) => {
+    if (get().isSupabaseConnected) {
+      await SupabaseService.markNotificationRead(id);
+    }
+    set((state) => ({
+      notifications: state.notifications.map(n => n.id === id ? { ...n, read: true } : n)
+    }));
+  },
 
-  addRecurringOrder: (orderStart) => set((state) => ({
-    recurringOrders: [{
+  addRecurringOrder: async (orderStart) => {
+    const newOrder = {
       ...orderStart,
-      id: `rec-${Date.now()}`,
+      id: generateUUID(),
       createdAt: new Date().toISOString()
-    }, ...state.recurringOrders]
-  })),
+    };
+    if (get().isSupabaseConnected) {
+      await SupabaseService.addRecurringOrder(newOrder);
+    }
+    set((state) => ({
+      recurringOrders: [newOrder as RecurringOrder, ...state.recurringOrders]
+    }));
+    get().addAlert({ message: 'Recurring mandate established.', type: 'success' });
+  },
 
-  toggleRecurringOrderStatus: (id) => set((state) => ({
-    recurringOrders: state.recurringOrders.map(r => r.id === id ? { ...r, status: r.status === 'active' ? 'paused' : 'active' } : r)
-  })),
+  toggleRecurringOrderStatus: async (id) => {
+    const { recurringOrders } = get();
+    const order = recurringOrders.find(r => r.id === id);
+    if (!order) return;
+    
+    const newStatus = order.status === 'active' ? 'paused' : 'active';
+    if (get().isSupabaseConnected) {
+      await SupabaseService.updateRecurringOrderStatus(id, newStatus);
+    }
+    set((state) => ({
+      recurringOrders: state.recurringOrders.map(r => r.id === id ? { ...r, status: newStatus } : r)
+    }));
+  },
 
-  deleteRecurringOrder: (id) => set((state) => ({
-    recurringOrders: state.recurringOrders.filter(r => r.id !== id)
-  })),
+  deleteRecurringOrder: async (id) => {
+    if (get().isSupabaseConnected) {
+      await SupabaseService.deleteRecurringOrder(id);
+    }
+    set((state) => ({
+      recurringOrders: state.recurringOrders.filter(r => r.id !== id)
+    }));
+    get().addAlert({ message: 'Recurring mandate terminated.', type: 'warning' });
+  },
 
   addProduct: async (productStart) => {
     try {

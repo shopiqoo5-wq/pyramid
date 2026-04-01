@@ -107,7 +107,7 @@ export const SupabaseService = {
 
   // --- ORDERS ---
   async getOrders(companyId?: string) {
-    let query = supabase.from('orders').select('*');
+    let query = supabase.from('orders').select('*, order_items(*)');
     if (companyId) query = query.eq('company_id', companyId);
     const { data, error } = await query;
     if (error) throw error;
@@ -115,8 +115,20 @@ export const SupabaseService = {
   },
 
   async placeOrder(order: any) {
-    const { data } = await supabase.from('orders').insert(camelToSnake(order)).select().single();
-    return snakeToCamel(data) as Order;
+    const { items, ...orderData } = order;
+    const { data: ord, error: ordErr } = await supabase.from('orders').insert(camelToSnake(orderData)).select().single();
+    if (ordErr) throw ordErr;
+
+    if (items && items.length > 0) {
+      const itemsToInsert = items.map((it: any) => ({
+        ...camelToSnake(it),
+        order_id: ord.id
+      }));
+      const { error: itemsErr } = await supabase.from('order_items').insert(itemsToInsert);
+      if (itemsErr) throw itemsErr;
+    }
+
+    return snakeToCamel({ ...ord, items }) as Order;
   },
 
   async updateOrderStatus(orderId: string, status: string) {
@@ -158,15 +170,24 @@ export const SupabaseService = {
 
   // --- SUPPORT ---
   async getTickets(companyId?: string) {
-    let query = supabase.from('tickets').select('*');
+    let query = supabase.from('tickets').select('*, ticket_messages(*)');
     if (companyId) query = query.eq('company_id', companyId);
-    const { data } = await query;
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
     return snakeToCamel(data || []);
   },
 
   async createTicket(ticket: any) {
-    const { data } = await supabase.from('tickets').insert(camelToSnake(ticket)).select().single();
-    return snakeToCamel(data);
+    const { messages, ...ticketData } = ticket;
+    const { data: t, error } = await supabase.from('tickets').insert(camelToSnake(ticketData)).select().single();
+    if (error) throw error;
+    
+    if (messages && messages.length > 0) {
+      await supabase.from('ticket_messages').insert(
+        messages.map((m: any) => ({ ...camelToSnake(m), ticket_id: t.id }))
+      );
+    }
+    return snakeToCamel({ ...t, messages });
   },
 
   async updateTicketStatus(id: string, updates: any) {
@@ -237,8 +258,21 @@ export const SupabaseService = {
   async getComplianceDocs(companyId?: string) {
     let query = supabase.from('compliance_docs').select('*');
     if (companyId) query = query.eq('company_id', companyId);
-    const { data } = await query;
+    const { data } = await query.order('created_at', { ascending: false });
     return snakeToCamel(data || []);
+  },
+
+  async getNotifications(userId: string) {
+    const { data } = await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    return snakeToCamel(data || []);
+  },
+
+  async addNotification(notification: any) {
+    await supabase.from('notifications').insert(camelToSnake(notification));
+  },
+
+  async markNotificationRead(id: string) {
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
   },
 
   // --- FINANCE ---
@@ -472,11 +506,62 @@ export const SupabaseService = {
 
   // --- QUOTATIONS ---
   async getQuotations() {
-    const { data } = await supabase.from('quotations').select('*');
+    const { data, error } = await supabase.from('quotations').select('*, quotation_items(*)');
+    if (error) throw error;
     return snakeToCamel(data || []);
   },
 
+  async addQuotation(quotation: any) {
+    const { items, ...quotData } = quotation;
+    const { data: q, error: qErr } = await supabase.from('quotations').insert(camelToSnake(quotData)).select().single();
+    if (qErr) throw qErr;
+
+    if (items && items.length > 0) {
+      const { error: itemsErr } = await supabase.from('quotation_items').insert(
+        items.map((it: any) => ({ ...camelToSnake(it), quotation_id: q.id }))
+      );
+      if (itemsErr) throw itemsErr;
+    }
+    return snakeToCamel({ ...q, items });
+  },
+
+  async getRecurringOrders(companyId?: string) {
+    let query = supabase.from('recurring_orders').select('*, recurring_order_items(*)');
+    if (companyId) query = query.eq('company_id', companyId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return snakeToCamel(data || []);
+  },
+
+  async addRecurringOrder(order: any) {
+    const { items, ...orderData } = order;
+    const { data: ro, error } = await supabase.from('recurring_orders').insert(camelToSnake(orderData)).select().single();
+    if (error) throw error;
+
+    if (items && items.length > 0) {
+      await supabase.from('recurring_order_items').insert(
+        items.map((it: any) => ({ ...camelToSnake(it), recurring_order_id: ro.id }))
+      );
+    }
+    return snakeToCamel({ ...ro, items });
+  },
+
+  async updateRecurringOrderStatus(id: string, status: string) {
+    await supabase.from('recurring_orders').update({ status }).eq('id', id);
+  },
+
+  async deleteRecurringOrder(id: string) {
+    await supabase.from('recurring_orders').delete().eq('id', id);
+  },
+
   // --- PRICING & SETTINGS ---
+  async getClientPricing(companyId?: string) {
+    let query = supabase.from('client_pricing').select('*');
+    if (companyId) query = query.eq('company_id', companyId);
+    const { data } = await query;
+    return snakeToCamel(data || []);
+  },
+
   async upsertClientPricing(pricing: any) {
     await supabase.from('client_pricing').upsert(camelToSnake(pricing));
   },
@@ -511,12 +596,11 @@ export const SupabaseService = {
     return data ? snakeToCamel(data) : null;
   },
 
-  // --- BATCHES ---
-  async addBatch(batch: any) {
-    await supabase.from('batches').insert(camelToSnake(batch));
+  async getWebhooks() {
+    const { data } = await supabase.from('webhooks').select('*').order('created_at', { ascending: false });
+    return snakeToCamel(data || []);
   },
 
-  // --- WEBHOOKS ---
   async addWebhook(webhook: any) {
     await supabase.from('webhooks').insert(camelToSnake(webhook));
   },
@@ -531,6 +615,16 @@ export const SupabaseService = {
 
   async toggleWebhookActive(id: string, active: boolean) {
     await supabase.from('webhooks').update({ active }).eq('id', id);
+  },
+
+  // --- BATCHES ---
+  async getBatches() {
+    const { data } = await supabase.from('batches').select('*');
+    return snakeToCamel(data || []);
+  },
+
+  async addBatch(batch: any) {
+    await supabase.from('batches').insert(camelToSnake(batch));
   },
 
   // --- STORAGE & UTILS ---
