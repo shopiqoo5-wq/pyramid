@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import connectToDatabase from '../../src/lib/mongodb';
-import * as Models from '../../src/models/Schemas';
+import connectToDatabase from '../../src/lib/mongodb.js';
+import * as Models from '../../src/models/Schemas.js';
 import mongoose from 'mongoose';
-import { requireAuth } from '../_utils/auth';
+import { requireAuth } from '../_utils/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { table } = req.query;

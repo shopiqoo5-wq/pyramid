@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import connectToDatabase from '../../src/lib/mongodb';
-import { User } from '../../src/models/Schemas';
+import connectToDatabase from '../../src/lib/mongodb.js';
+import { User } from '../../src/models/Schemas.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
