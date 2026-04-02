@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import connectToDatabase from '../../_db/mongodb.js';
+import { castModel } from '../../_db/castModel.js';
 import { Company } from '../../_db/Schemas.js';
 import { requireAuth } from '../../_utils/auth.js';
 
@@ -18,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const delta = Number(amount);
     if (!Number.isFinite(delta)) return res.status(400).json({ message: 'amount must be a number' });
 
-    const updated = await Company.findByIdAndUpdate(
+    const updated = await castModel(Company).findByIdAndUpdate(
       companyId,
       { $inc: { availableCredit: delta } },
       { new: true }

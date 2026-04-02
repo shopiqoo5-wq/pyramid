@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import connectToDatabase from '../../_db/mongodb.js';
+import { castModel } from '../../_db/castModel.js';
 import { Inventory } from '../../_db/Schemas.js';
 import { requireAuth } from '../../_utils/auth.js';
 
@@ -16,7 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const q = Number(quantity);
     if (!Number.isFinite(q)) return res.status(400).json({ message: 'quantity must be a number' });
 
-    const updated = await Inventory.findOneAndUpdate(
+    const updated = await castModel(Inventory).findOneAndUpdate(
       { productId, warehouseId },
       { $set: { quantity: q, availableQuantity: q } },
       { new: true, upsert: true }

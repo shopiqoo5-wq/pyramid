@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import connectToDatabase from '../_db/mongodb.js';
+import { castModel } from '../_db/castModel.js';
 import * as Models from '../_db/Schemas.js';
 import mongoose from 'mongoose';
 import { requireAuth } from '../_utils/auth.js';
@@ -32,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `Dynamic_${tableName}`,
         new mongoose.Schema({}, { strict: false, timestamps: true })
       ));
-  const ActiveModel = DynamicModel;
+  const ActiveModel = castModel(DynamicModel);
 
   try {
     // All data routes require auth (read + write)

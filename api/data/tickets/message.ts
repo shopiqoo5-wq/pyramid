@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import connectToDatabase from '../../_db/mongodb.js';
+import { castModel } from '../../_db/castModel.js';
 import { Ticket } from '../../_db/Schemas.js';
 import { requireAuth } from '../../_utils/auth.js';
 
@@ -13,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { ticketId, message, imageUrl, isStaff } = req.body || {};
     if (!ticketId || !message) return res.status(400).json({ message: 'ticketId and message are required' });
 
-    const updated = await Ticket.findByIdAndUpdate(
+    const updated = await castModel(Ticket).findByIdAndUpdate(
       ticketId,
       {
         $push: {
