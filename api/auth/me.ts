@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import connectToDatabase from '../../src/lib/mongodb.js';
-import { User } from '../../src/models/Schemas.js';
+import connectToDatabase from '../_db/mongodb.js';
+import { User } from '../_db/Schemas.js';
 import { requireAuth } from '../_utils/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
