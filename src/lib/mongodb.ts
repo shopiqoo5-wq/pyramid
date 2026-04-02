@@ -39,7 +39,7 @@ try {
 let cached = (globalThis as any).mongoose;
 
 if (!cached) {
-  cached = (globalThis as any).mongoose = { conn: null, promise: null };
+  cached = (globalThis as any).mongoose = { conn: null };
 }
 
 async function connectToDatabase() {
@@ -52,24 +52,24 @@ async function connectToDatabase() {
     return cached.conn;
   }
 
-  if (!cached.promise) {
+  try {
     const opts = {
       bufferCommands: false,
-      // Prevent serverless functions from hanging for a long time.
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-      maxPoolSize: 2,
+      // Fail fast in serverless.
+      serverSelectionTimeoutMS: 3000,
+      connectTimeoutMS: 3000,
+      maxPoolSize: 1,
     } as any;
 
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      return mongoose;
-    });
-  }
-
-  try {
-    cached.conn = await cached.promise;
+    cached.conn = await mongoose.connect(MONGODB_URI, opts);
   } catch (e) {
-    cached.promise = null;
+    cached.conn = null;
+    // Ensure we don't leave a half-open connection around.
+    try {
+      await mongoose.disconnect();
+    } catch {
+      // ignore
+    }
     throw e;
   }
 
