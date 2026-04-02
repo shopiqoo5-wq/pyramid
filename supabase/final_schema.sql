@@ -914,3 +914,41 @@ INSERT INTO public.inventory (id, product_id, warehouse_id, quantity, available_
 ON CONFLICT (product_id, warehouse_id) DO NOTHING;
 
 SET session_replication_role = 'origin';
+
+-- ==========================================
+-- STORAGE BUCKETS & POLICIES
+-- ==========================================
+
+-- 1. Create Buckets
+INSERT INTO storage.buckets (id, name, public) 
+VALUES 
+  ('attendance', 'attendance', true),
+  ('work-reports', 'work-reports', true),
+  ('products', 'products', true),
+  ('incidents', 'incidents', true),
+  ('avatars', 'avatars', true),
+  ('support', 'support', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 2. Enable Storage RLS
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+
+-- 3. Storage Policies (Robust Implementation)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Select' AND tablename = 'objects' AND schemaname = 'storage') THEN
+        CREATE POLICY "Public Select" ON storage.objects FOR SELECT USING (true);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Insert' AND tablename = 'objects' AND schemaname = 'storage') THEN
+        CREATE POLICY "Public Insert" ON storage.objects FOR INSERT WITH CHECK (true);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Update' AND tablename = 'objects' AND schemaname = 'storage') THEN
+        CREATE POLICY "Public Update" ON storage.objects FOR UPDATE USING (true);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Delete' AND tablename = 'objects' AND schemaname = 'storage') THEN
+        CREATE POLICY "Public Delete" ON storage.objects FOR DELETE USING (true);
+    END IF;
+END $$;

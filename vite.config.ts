@@ -4,7 +4,33 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), basicSsl()],
+  plugins: [
+    react(), 
+    basicSsl(),
+    {
+      name: 'dev-api-mock',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url?.startsWith('/api/')) {
+            // Mock API Strategy: Simple 200 responses to keep ApiService alive
+            res.setHeader('Content-Type', 'application/json');
+            
+            if (req.url.includes('/auth/login')) {
+               return res.end(JSON.stringify({ token: 'mock-jwt', user: { name: 'Admin Sameer', role: 'admin' } }));
+            }
+            
+            if (req.url.includes('/data/')) {
+               return res.end(JSON.stringify([])); // Empty success for sync
+            }
+
+            res.statusCode = 200;
+            return res.end(JSON.stringify({ status: 'ok', mock: true }));
+          }
+          next();
+        });
+      }
+    }
+  ],
   server: {
     host: true
   },

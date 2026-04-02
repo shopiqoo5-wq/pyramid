@@ -14,8 +14,7 @@ import { mockUsers, mockProducts, mockInventory, mockOrders, mockCompanies, mock
 import { secureToken, hashPassword, verifyPassword, sanitizeUser } from '../utils/security';
 import { generateUUID } from '../lib/supabaseUtils';
 import { calculateIndianGST } from '../utils/gst';
-import { SupabaseService } from '../lib/supabaseService';
-import { supabase } from '../lib/supabase';
+import { ApiService } from '../lib/apiService';
 
 const SYSTEM_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -285,7 +284,7 @@ export const useStore = create<AppState>()(
       createdAt: new Date().toISOString()
     };
     if (get().isSupabaseConnected) {
-      await SupabaseService.addQuotation(newQuotation);
+      await ApiService.addQuotation(newQuotation);
     }
     set(state => ({ quotations: [newQuotation, ...state.quotations] }));
     get().addAlert({ message: 'Quotation generated successfully!', type: 'success' });
@@ -324,27 +323,18 @@ export const useStore = create<AppState>()(
   isSupabaseConnected: false,
   currentUser: null,
   login: async (companyIdentifier, userIdentifier, password) => {
-    // 1. Try Supabase Auth if connected
+    // 1. Try MongoDB Auth if connected
     if (get().isSupabaseConnected) {
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: userIdentifier,
-          password: password,
-        });
-
-        if (!error && data.user) {
-          const profile = await SupabaseService.getCurrentUser();
-          if (profile) {
-            set({ currentUser: profile });
-            get().addAlert({ message: `Access Authorized: ${profile.name}`, type: 'success' });
-            
-            // Hydrate data immediately
-            await get().initSupabase();
-            return true;
-          }
+        const user = await ApiService.signIn(userIdentifier, password);
+        if (user) {
+          set({ currentUser: user });
+          get().addAlert({ message: `Access Authorized: ${user.name}`, type: 'success' });
+          await get().initSupabase();
+          return true;
         }
       } catch (err: any) {
-        console.warn('Supabase Auth failed, falling back to mock:', err.message);
+        console.warn('API Auth failed, falling back to mock:', err.message);
       }
     }
 
@@ -376,8 +366,8 @@ export const useStore = create<AppState>()(
     return false;
   },
   logout: async () => {
-    // In Supabase mode, we use supabase.auth.signOut()
-    await supabase.auth.signOut();
+    // In Cloud mode, we use ApiService.signOut()
+    await ApiService.signOut();
     get().addAlert({ message: 'Logged out successfully.', type: 'info' });
     
     // Signed out users see restricted view, but we keep the local state 
@@ -408,7 +398,7 @@ export const useStore = create<AppState>()(
     }
 
     try {
-      const isReachable = await SupabaseService.checkConnection();
+      const isReachable = await ApiService.checkConnection();
       if (!isReachable) {
         set({ isSupabaseConnected: false });
         console.warn('⚠️ Supabase unreachable. Falling back to local cache.');
@@ -441,32 +431,32 @@ export const useStore = create<AppState>()(
 
       // Atomic hydration sequence
       await Promise.all([
-        fetchData('Products', SupabaseService.getProducts, (d) => set({ products: d }), 'products'),
-        fetchData('Companies', SupabaseService.getCompanies, (d) => set({ companies: d }), 'companies'),
-        fetchData('Locations', () => SupabaseService.getLocations(), (d) => set({ locations: d }), 'locations'),
-        fetchData('Orders', () => SupabaseService.getOrders(), (d) => set({ orders: d }), 'orders'),
-        fetchData('Inventory', SupabaseService.getInventory, (d) => set({ inventory: d }), 'inventory'),
-        fetchData('Users', SupabaseService.getUsers, (d) => set({ users: d }), 'users'),
-        fetchData('Attendance', () => SupabaseService.getAttendance(), (d) => set({ attendanceRecords: d }), 'attendanceRecords'),
-        fetchData('Work Reports', SupabaseService.getWorkReports, (d) => set({ workReports: d }), 'workReports'),
-        fetchData('Incidents', SupabaseService.getIncidents, (d) => set({ fieldIncidents: d }), 'fieldIncidents'),
-        fetchData('Time Off', SupabaseService.getTimeOffRequests, (d) => set({ timeOffRequests: d }), 'timeOffRequests'),
-        fetchData('Shifts', SupabaseService.getShifts, (d) => set({ employeeShifts: d }), 'employeeShifts'),
-        fetchData('Employees', SupabaseService.getEmployees, (d) => set({ employees: d }), 'employees'),
-        fetchData('Protocols', SupabaseService.getSiteProtocols, (d) => set({ siteProtocols: d }), 'siteProtocols'),
-        fetchData('Assignments', SupabaseService.getWorkAssignments, (d) => set({ workAssignments: d }), 'workAssignments'),
-        fetchData('Bundles', SupabaseService.getProductBundles, (d) => set({ productBundles: d }), 'productBundles'),
-        fetchData('Roles', SupabaseService.getCustomRoles, (d) => set({ customRoles: d }), 'customRoles'),
-        fetchData('Audit Logs', SupabaseService.getAuditLogs, (d) => set({ auditLogs: d }), 'auditLogs'),
-        fetchData('Inventory Logs', SupabaseService.getInventoryLogs, (d) => set({ inventoryLogs: d }), 'inventoryLogs'),
-        fetchData('Quotations', SupabaseService.getQuotations, (d) => set({ quotations: d }), 'quotations'),
-        fetchData('Tickets', () => SupabaseService.getTickets(), (d) => set({ supportTickets: d }), 'supportTickets'),
-        fetchData('Recurring Orders', () => SupabaseService.getRecurringOrders(), (d) => set({ recurringOrders: d }), 'recurringOrders'),
-        fetchData('Webhooks', SupabaseService.getWebhooks, (d) => set({ webhooks: d }), 'webhooks'),
-        fetchData('Compliance Docs', () => SupabaseService.getComplianceDocs(), (d) => set({ complianceDocs: d }), 'complianceDocs'),
-        fetchData('Fraud Flags', SupabaseService.getFraudFlags, (d) => set({ fraudFlags: d }), 'fraudFlags'),
-        fetchData('Exceptions', SupabaseService.getExceptions, (d) => set({ exceptions: d }), 'exceptions'),
-        fetchData('Daily Checklists', SupabaseService.getDailyChecklists, (d) => {
+        fetchData('Products', ApiService.getProducts, (d) => set({ products: d }), 'products'),
+        fetchData('Companies', ApiService.getCompanies, (d) => set({ companies: d }), 'companies'),
+        fetchData('Locations', () => ApiService.getLocations(), (d) => set({ locations: d }), 'locations'),
+        fetchData('Orders', () => ApiService.getOrders(), (d) => set({ orders: d }), 'orders'),
+        fetchData('Inventory', ApiService.getInventory, (d) => set({ inventory: d }), 'inventory'),
+        fetchData('Users', ApiService.getUsers, (d) => set({ users: d }), 'users'),
+        fetchData('Attendance', () => ApiService.getAttendance(), (d) => set({ attendanceRecords: d }), 'attendanceRecords'),
+        fetchData('Work Reports', ApiService.getWorkReports, (d) => set({ workReports: d }), 'workReports'),
+        fetchData('Incidents', ApiService.getIncidents, (d) => set({ fieldIncidents: d }), 'fieldIncidents'),
+        fetchData('Time Off', ApiService.getTimeOffRequests, (d) => set({ timeOffRequests: d }), 'timeOffRequests'),
+        fetchData('Shifts', ApiService.getShifts, (d) => set({ employeeShifts: d }), 'employeeShifts'),
+        fetchData('Employees', ApiService.getEmployees, (d) => set({ employees: d }), 'employees'),
+        fetchData('Protocols', ApiService.getSiteProtocols, (d) => set({ siteProtocols: d }), 'siteProtocols'),
+        fetchData('Assignments', ApiService.getWorkAssignments, (d) => set({ workAssignments: d }), 'workAssignments'),
+        fetchData('Bundles', ApiService.getProductBundles, (d) => set({ productBundles: d }), 'productBundles'),
+        fetchData('Roles', ApiService.getCustomRoles, (d) => set({ customRoles: d }), 'customRoles'),
+        fetchData('Audit Logs', ApiService.getAuditLogs, (d) => set({ auditLogs: d }), 'auditLogs'),
+        fetchData('Inventory Logs', ApiService.getInventoryLogs, (d) => set({ inventoryLogs: d }), 'inventoryLogs'),
+        fetchData('Quotations', ApiService.getQuotations, (d) => set({ quotations: d }), 'quotations'),
+        fetchData('Tickets', () => ApiService.getTickets(), (d) => set({ supportTickets: d }), 'supportTickets'),
+        fetchData('Recurring Orders', () => ApiService.getRecurringOrders(), (d) => set({ recurringOrders: d }), 'recurringOrders'),
+        fetchData('Webhooks', ApiService.getWebhooks, (d) => set({ webhooks: d }), 'webhooks'),
+        fetchData('Compliance Docs', () => ApiService.getComplianceDocs(), (d) => set({ complianceDocs: d }), 'complianceDocs'),
+        fetchData('Fraud Flags', ApiService.getFraudFlags, (d) => set({ fraudFlags: d }), 'fraudFlags'),
+        fetchData('Exceptions', ApiService.getExceptions, (d) => set({ exceptions: d }), 'exceptions'),
+        fetchData('Daily Checklists', ApiService.getDailyChecklists, (d) => {
           const progress: Record<string, string[]> = {};
           const status: Record<string, string> = {};
           d.forEach((item: any) => {
@@ -475,20 +465,20 @@ export const useStore = create<AppState>()(
           });
           set({ dailyTaskProgress: progress, submittedChecklists: status });
         }, 'submittedChecklists'),
-        fetchData('Batches', SupabaseService.getBatches, (d) => set({ batches: d }), 'batches'),
-        fetchData('Favorites', () => get().currentUser ? SupabaseService.getFavorites(get().currentUser!.id) : Promise.resolve([]), (d) => set({ favorites: d }), 'favorites'),
-        fetchData('API Keys', () => get().currentUser?.companyId ? SupabaseService.getAPIKeys(get().currentUser!.companyId!) : Promise.resolve([]), (d) => set({ apiKeys: d }), 'apiKeys'),
-        fetchData('Photos', SupabaseService.getPhotoVerifications, (d) => set({ photos: d }), 'photos'),
+        fetchData('Batches', ApiService.getBatches, (d) => set({ batches: d }), 'batches'),
+        fetchData('Favorites', () => get().currentUser ? ApiService.getFavorites(get().currentUser!.id) : Promise.resolve([]), (d) => set({ favorites: d }), 'favorites'),
+        fetchData('API Keys', () => get().currentUser?.companyId ? ApiService.getAPIKeys(get().currentUser!.companyId!) : Promise.resolve([]), (d) => set({ apiKeys: d }), 'apiKeys'),
+        fetchData('Photos', ApiService.getPhotoVerifications, (d) => set({ photos: d }), 'photos'),
       ]);
 
       const user = get().currentUser;
       if (user) {
-        await fetchData(`${user.name} Notifications`, () => SupabaseService.getNotifications(user.id), (d) => set({ notifications: d }), 'notifications');
+        await fetchData(`${user.name} Notifications`, () => ApiService.getNotifications(user.id), (d) => set({ notifications: d }), 'notifications');
       }
 
       // Attempt to restore session
       try {
-        const currentUser = await SupabaseService.getCurrentUser();
+        const currentUser = await ApiService.getCurrentUser();
         if (currentUser) {
           set({ currentUser });
           console.log(`👤 Auth Verified: ${currentUser.name}`);
@@ -696,7 +686,7 @@ export const useStore = create<AppState>()(
       createdAt: new Date().toISOString()
     };
     if (get().isSupabaseConnected) {
-      await SupabaseService.createReturnRequest(newReturn);
+      await ApiService.createReturnRequest(newReturn);
     }
     get().addAlert({ message: 'Return request submitted successfully!', type: 'success' });
     set(state => ({ returnRequests: [newReturn, ...state.returnRequests] }));
@@ -752,7 +742,7 @@ export const useStore = create<AppState>()(
     }
 
     if (isSupabaseConnected) {
-      await SupabaseService.updateReturnStatus(id, status);
+      await ApiService.updateReturnStatus(id, status);
     }
 
     set(state => ({
@@ -768,7 +758,7 @@ export const useStore = create<AppState>()(
       createdAt: new Date().toISOString()
     };
     if (get().isSupabaseConnected) {
-      await SupabaseService.addAPIKey(newKey);
+      await ApiService.addAPIKey(newKey);
     }
     set(state => ({ apiKeys: [...state.apiKeys, newKey] }));
     get().addAlert({ message: 'New API key generated!', type: 'success' });
@@ -776,7 +766,7 @@ export const useStore = create<AppState>()(
   },
   revokeAPIKey: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteAPIKey(id);
+      await ApiService.deleteAPIKey(id);
     }
     set(state => ({
       apiKeys: state.apiKeys.filter(k => k.id !== id)
@@ -791,7 +781,7 @@ export const useStore = create<AppState>()(
       createdAt: new Date().toISOString()
     };
     if (get().isSupabaseConnected) {
-      await SupabaseService.addPhotoVerification(newPhoto);
+      await ApiService.addPhotoVerification(newPhoto);
     }
     set(state => ({
       photos: [newPhoto as PhotoVerification, ...state.photos]
@@ -824,7 +814,7 @@ export const useStore = create<AppState>()(
     addAlert({ message: `Order ${order.customId} status updated to ${status}.`, type: 'success' });
 
       if (get().isSupabaseConnected) {
-        await SupabaseService.updateOrderStatus(orderId, status);
+        await ApiService.updateOrderStatus(orderId, status);
       }
 
     set((state) => ({
@@ -920,7 +910,7 @@ export const useStore = create<AppState>()(
 
         // Persist to Supabase if config is live
         if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
-          await SupabaseService.placeOrder(newOrd);
+          await ApiService.placeOrder(newOrd);
         }
 
         newOrders.push(newOrd);
@@ -956,7 +946,7 @@ export const useStore = create<AppState>()(
 
     updateUserFaceImage: async (userId, imageUrl) => {
       if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
-        await SupabaseService.updateUserFaceImage(userId, imageUrl);
+        await ApiService.updateUserFaceImage(userId, imageUrl);
       }
       set(state => ({
         users: state.users.map(u => u.id === userId ? { ...u, faceImageUrl: imageUrl } : u)
@@ -968,13 +958,13 @@ export const useStore = create<AppState>()(
     const existing = get().favorites.find(f => f.productId === productId && f.companyId === companyId);
     if (existing) {
       if (get().isSupabaseConnected) {
-        await SupabaseService.deleteFavorite(existing.id);
+        await ApiService.deleteFavorite(existing.id);
       }
       set(state => ({ favorites: state.favorites.filter(f => f.id !== existing.id) }));
     } else {
       const newFav = { id: generateUUID(), productId, companyId, userId: get().currentUser?.id };
       if (get().isSupabaseConnected) {
-        await SupabaseService.addFavorite(newFav);
+        await ApiService.addFavorite(newFav);
       }
       set(state => ({
         favorites: [...state.favorites, newFav]
@@ -984,7 +974,7 @@ export const useStore = create<AppState>()(
 
   logAction: async (userId, action, details) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.logAction(userId, action, details);
+      await ApiService.logAction(userId, action, details);
     }
     set((state) => ({
       auditLogs: [{
@@ -1005,7 +995,7 @@ export const useStore = create<AppState>()(
       createdAt: new Date().toISOString()
     };
     if (get().isSupabaseConnected) {
-      await SupabaseService.addNotification(newNotif);
+      await ApiService.addNotification(newNotif);
     }
     set((state) => ({
       notifications: [newNotif as Notification, ...state.notifications]
@@ -1014,7 +1004,7 @@ export const useStore = create<AppState>()(
 
   markNotificationAsRead: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.markNotificationRead(id);
+      await ApiService.markNotificationRead(id);
     }
     set((state) => ({
       notifications: state.notifications.map(n => n.id === id ? { ...n, read: true } : n)
@@ -1028,7 +1018,7 @@ export const useStore = create<AppState>()(
       createdAt: new Date().toISOString()
     };
     if (get().isSupabaseConnected) {
-      await SupabaseService.addRecurringOrder(newOrder);
+      await ApiService.addRecurringOrder(newOrder);
     }
     set((state) => ({
       recurringOrders: [newOrder as RecurringOrder, ...state.recurringOrders]
@@ -1043,7 +1033,7 @@ export const useStore = create<AppState>()(
     
     const newStatus = order.status === 'active' ? 'paused' : 'active';
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateRecurringOrderStatus(id, newStatus);
+      await ApiService.updateRecurringOrderStatus(id, newStatus);
     }
     set((state) => ({
       recurringOrders: state.recurringOrders.map(r => r.id === id ? { ...r, status: newStatus } : r)
@@ -1052,7 +1042,7 @@ export const useStore = create<AppState>()(
 
   deleteRecurringOrder: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteRecurringOrder(id);
+      await ApiService.deleteRecurringOrder(id);
     }
     set((state) => ({
       recurringOrders: state.recurringOrders.filter(r => r.id !== id)
@@ -1063,7 +1053,7 @@ export const useStore = create<AppState>()(
   addProduct: async (productStart) => {
     try {
       if (get().isSupabaseConnected) {
-        const product = await SupabaseService.addProduct(productStart);
+        const product = await ApiService.addProduct(productStart);
         set((state) => ({ products: [product, ...state.products] }));
       } else {
         set((state) => ({ products: [{ ...productStart, id: generateUUID() } as Product, ...state.products] }));
@@ -1077,7 +1067,7 @@ export const useStore = create<AppState>()(
   updateProduct: async (id, updates) => {
     try {
       if (get().isSupabaseConnected) {
-        await SupabaseService.updateProduct(id, updates);
+        await ApiService.updateProduct(id, updates);
       }
       set((state) => ({ products: state.products.map(p => p.id === id ? { ...p, ...updates } : p) }));
       get().addAlert({ message: 'Product record updated.', type: 'info' });
@@ -1089,7 +1079,7 @@ export const useStore = create<AppState>()(
   deleteProduct: async (id) => {
     try {
       if (get().isSupabaseConnected) {
-        await SupabaseService.deleteProduct(id);
+        await ApiService.deleteProduct(id);
       }
       set((state) => ({ products: state.products.filter(p => p.id !== id) }));
       get().addAlert({ message: 'Product decommissioned from catalog.', type: 'warning' });
@@ -1101,7 +1091,7 @@ export const useStore = create<AppState>()(
   addCompany: async (companyStart) => {
     try {
       if (get().isSupabaseConnected) {
-        const company = await SupabaseService.addCompany(companyStart);
+        const company = await ApiService.addCompany(companyStart);
         set((state) => ({ companies: [company, ...state.companies] }));
       } else {
         set((state) => ({ companies: [{ ...companyStart, id: generateUUID() } as Company, ...state.companies] }));
@@ -1115,7 +1105,7 @@ export const useStore = create<AppState>()(
   updateCompany: async (id, updates) => {
     try {
       if (get().isSupabaseConnected) {
-        await SupabaseService.updateCompany(id, updates);
+        await ApiService.updateCompany(id, updates);
       }
       set((state) => ({ companies: state.companies.map(c => c.id === id ? { ...c, ...updates } : c) }));
       get().addAlert({ message: 'Company governance updated.', type: 'info' });
@@ -1127,7 +1117,7 @@ export const useStore = create<AppState>()(
   deleteCompany: async (id) => {
     try {
       if (get().isSupabaseConnected) {
-        await SupabaseService.deleteCompany(id);
+        await ApiService.deleteCompany(id);
       }
       set((state) => ({ companies: state.companies.filter(c => c.id !== id) }));
       get().addAlert({ message: 'Company record expunged.', type: 'warning' });
@@ -1143,7 +1133,7 @@ export const useStore = create<AppState>()(
       const newUser = { ...rest, id: generateUUID(), username, password: hashedPassword, status: 'active' as const };
       
       if (get().isSupabaseConnected) {
-         await SupabaseService.addUser(newUser);
+         await ApiService.addUser(newUser);
       }
 
       set((state) => ({ users: [sanitizeUser(newUser) as User, ...state.users] }));
@@ -1159,7 +1149,7 @@ export const useStore = create<AppState>()(
     logAction('admin', 'create_bundle', `Created new bundle: ${bundleStart.name} (${bundleStart.sku})`);
     
     if (get().isSupabaseConnected) {
-      await SupabaseService.addProductBundle(newBundle);
+      await ApiService.addProductBundle(newBundle);
     }
 
     set((state) => ({ productBundles: [newBundle, ...state.productBundles] }));
@@ -1171,7 +1161,7 @@ export const useStore = create<AppState>()(
     logAction('admin', 'update_bundle', `Updated bundle: ${bundle?.name || id}`);
     
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateProductBundle(id, updates);
+      await ApiService.updateProductBundle(id, updates);
     }
 
     set((state) => ({
@@ -1185,7 +1175,7 @@ export const useStore = create<AppState>()(
     logAction('admin', 'delete_bundle', `Deleted bundle: ${bundle?.name || id}`);
     
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteProductBundle(id);
+      await ApiService.deleteProductBundle(id);
     }
 
     set((state) => ({
@@ -1219,8 +1209,8 @@ export const useStore = create<AppState>()(
     };
 
     if (isSupabaseConnected) {
-      SupabaseService.updateStock(productId, warehouseId, newQuantity).then();
-      SupabaseService.addInventoryLog(newLog).then();
+      ApiService.updateStock(productId, warehouseId, newQuantity).then();
+      ApiService.addInventoryLog(newLog).then();
     }
 
     set(state => {
@@ -1307,7 +1297,7 @@ export const useStore = create<AppState>()(
            };
 
            if (get().isSupabaseConnected) {
-             SupabaseService.addInventoryLog(log).then();
+             ApiService.addInventoryLog(log).then();
            }
 
            state.inventoryLogs = [{
@@ -1342,7 +1332,7 @@ export const useStore = create<AppState>()(
             };
 
             if (get().isSupabaseConnected) {
-              SupabaseService.addInventoryLog(log).then();
+              ApiService.addInventoryLog(log).then();
             }
 
             state.inventoryLogs = [{
@@ -1375,7 +1365,7 @@ export const useStore = create<AppState>()(
     }
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateUser(id, updates);
+      await ApiService.updateUser(id, updates);
     }
     set((state) => ({
       users: state.users.map(u => u.id === id ? { ...u, ...updates } : u)
@@ -1409,7 +1399,7 @@ export const useStore = create<AppState>()(
     logAction('admin', 'delete_user', `Removed user: ${user.name} (${user.email})`);
     
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteUser(id);
+      await ApiService.deleteUser(id);
     }
 
     set((state) => ({
@@ -1424,7 +1414,7 @@ export const useStore = create<AppState>()(
     get().logAction('admin', 'create_location', `Added location ${locationStart.name} for ${company?.name || locationStart.companyId}`);
     
     if (get().isSupabaseConnected) {
-      const newLoc = await SupabaseService.addLocation(locationStart);
+      const newLoc = await ApiService.addLocation(locationStart);
       set((state) => ({ locations: [newLoc, ...state.locations] }));
     } else {
       const newLoc = { ...locationStart, id: generateUUID() };
@@ -1438,7 +1428,7 @@ export const useStore = create<AppState>()(
     logAction('admin', 'create_contract', `Established ${contractStart.type} contract for ${company?.name || 'unknown client'}.`);
     
     if (get().isSupabaseConnected) {
-      const newContract = await SupabaseService.addContract(contractStart) as Contract;
+      const newContract = await ApiService.addContract(contractStart) as Contract;
       set(state => ({ contracts: [newContract, ...state.contracts] }));
     } else {
       const newContract: Contract = { ...contractStart, id: generateUUID(), status: 'Active' };
@@ -1448,7 +1438,7 @@ export const useStore = create<AppState>()(
 
   deleteLocation: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteLocation(id);
+      await ApiService.deleteLocation(id);
     }
     set((state) => ({
       locations: state.locations.filter(l => l.id !== id)
@@ -1457,7 +1447,7 @@ export const useStore = create<AppState>()(
 
   updateLocation: async (id, updates) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateLocation(id, updates);
+      await ApiService.updateLocation(id, updates);
     }
     set((state) => ({
       locations: state.locations.map(l => l.id === id ? { ...l, ...updates } : l)
@@ -1467,7 +1457,7 @@ export const useStore = create<AppState>()(
 
   updateContract: async (id, updates) => {
     if (get().isSupabaseConnected) {
-      const updated = await SupabaseService.updateContract(id, updates);
+      const updated = await ApiService.updateContract(id, updates);
       set(state => ({
         contracts: state.contracts.map(c => c.id === id ? updated : c)
       }));
@@ -1480,7 +1470,7 @@ export const useStore = create<AppState>()(
 
   deleteContract: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteContract(id);
+      await ApiService.deleteContract(id);
     }
     set((state) => ({
       contracts: state.contracts.filter(c => c.id !== id)
@@ -1499,7 +1489,7 @@ export const useStore = create<AppState>()(
     }
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.upsertClientPricing({
+      await ApiService.upsertClientPricing({
            companyId, productId, negotiatedPrice: price
       });
     }
@@ -1550,7 +1540,7 @@ export const useStore = create<AppState>()(
   addBatch: async (batchStart) => {
     const newBatch: Batch = { ...batchStart, id: generateUUID() };
     if (get().isSupabaseConnected) {
-      await SupabaseService.addBatch(newBatch);
+      await ApiService.addBatch(newBatch);
     }
     set(state => ({ 
       batches: [newBatch, ...state.batches]
@@ -1566,7 +1556,7 @@ export const useStore = create<AppState>()(
 
   triggerException: async (excStart) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.reportException(excStart);
+      await ApiService.reportException(excStart);
     }
     const newExc: AppException = {
       ...excStart,
@@ -1585,7 +1575,7 @@ export const useStore = create<AppState>()(
 
   resolveException: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.resolveException(id);
+      await ApiService.resolveException(id);
     }
     set(state => ({
       exceptions: state.exceptions.map(e => e.id === id ? { ...e, status: 'resolved' } : e)
@@ -1594,7 +1584,7 @@ export const useStore = create<AppState>()(
 
   flagFraud: async (flagStart) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.flagFraud(flagStart);
+      await ApiService.flagFraud(flagStart);
     }
     const newFlag: FraudFlag = {
       ...flagStart,
@@ -1613,7 +1603,7 @@ export const useStore = create<AppState>()(
 
   updateFraudStatus: async (id, status) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateFraudStatus(id, status);
+      await ApiService.updateFraudStatus(id, status);
     }
     set(state => ({
       fraudFlags: state.fraudFlags.map(f => f.id === id ? { ...f, status } : f)
@@ -1622,7 +1612,7 @@ export const useStore = create<AppState>()(
 
   addComplianceDoc: async (docStart) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.addComplianceDoc(docStart);
+      await ApiService.addComplianceDoc(docStart);
     }
     const newDoc: ComplianceDoc = {
       ...docStart,
@@ -1635,7 +1625,7 @@ export const useStore = create<AppState>()(
 
   deleteComplianceDoc: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteComplianceDoc(id);
+      await ApiService.deleteComplianceDoc(id);
     }
     set(state => ({
       complianceDocs: state.complianceDocs.filter(d => d.id !== id)
@@ -1649,7 +1639,7 @@ export const useStore = create<AppState>()(
       .map(o => o.id);
 
     if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_') && unpaidOrderIds.length > 0) {
-      await SupabaseService.updateOrdersPaid(unpaidOrderIds, true);
+      await ApiService.updateOrdersPaid(unpaidOrderIds, true);
     }
     
     logAction(SYSTEM_UUID, 'pay_invoices', `Corporate payment received for company ${companyId}`);
@@ -1666,8 +1656,8 @@ export const useStore = create<AppState>()(
     const totalSettled = settledOrders.reduce((sum, o) => sum + o.netAmount, 0);
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateOrdersPaid(orderIds, true);
-      await SupabaseService.updateCompanyCredit(companyId, totalSettled);
+      await ApiService.updateOrdersPaid(orderIds, true);
+      await ApiService.updateCompanyCredit(companyId, totalSettled);
     }
 
     logAction('admin', 'reconciled_account', `Marked ${orderIds.length} orders for company ${companyId} as paid. Total Settled: ₹${totalSettled.toLocaleString()}`);
@@ -1692,9 +1682,9 @@ export const useStore = create<AppState>()(
     }, {} as Record<string, number>);
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateOrdersPaid(orderIds, true);
+      await ApiService.updateOrdersPaid(orderIds, true);
       for (const [companyId, amount] of Object.entries(settlementByCompany)) {
-        await SupabaseService.updateCompanyCredit(companyId, amount);
+        await ApiService.updateCompanyCredit(companyId, amount);
       }
     }
 
@@ -1712,7 +1702,7 @@ export const useStore = create<AppState>()(
 
   markOrdersAsTallyExported: async (orderIds) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.markOrdersTallyExported(orderIds);
+      await ApiService.markOrdersTallyExported(orderIds);
     }
     set((state) => ({
       orders: state.orders.map(o => orderIds.includes(o.id) ? { ...o, tallyExported: true } : o)
@@ -1737,7 +1727,7 @@ export const useStore = create<AppState>()(
   addWebhook: async (webhookStart) => {
     const newWh = { ...webhookStart, id: generateUUID(), createdAt: new Date().toISOString() };
     if (get().isSupabaseConnected) {
-      await SupabaseService.addWebhook(newWh);
+      await ApiService.addWebhook(newWh);
     }
     set((state) => ({ webhooks: [newWh, ...state.webhooks] }));
   },
@@ -1749,7 +1739,7 @@ export const useStore = create<AppState>()(
     if (file && get().isSupabaseConnected) {
       try {
         const path = `incidents/${generateUUID()}-${file.name}`;
-        finalImageUrl = await SupabaseService.uploadFile('incidents', path, file);
+        finalImageUrl = await ApiService.uploadFile('incidents', path, file);
       } catch {
         get().addAlert({ message: 'Incident evidence upload deferred. Metadata persisted.', type: 'info' });
       }
@@ -1767,7 +1757,7 @@ export const useStore = create<AppState>()(
 
     try {
       if (get().isSupabaseConnected) {
-        await SupabaseService.submitIncident(newIncident);
+        await ApiService.submitIncident(newIncident);
       }
       set(state => ({ fieldIncidents: [newIncident, ...state.fieldIncidents] }));
       get().addAlert({ message: 'Transmission Successful: Incident reported to Command.', type: 'success' });
@@ -1780,7 +1770,7 @@ export const useStore = create<AppState>()(
 
   updateIncidentStatus: async (id, status, adminRemarks) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateIncidentStatus(id, { status, adminRemarks });
+      await ApiService.updateIncidentStatus(id, { status, adminRemarks });
     }
     set(state => ({
       fieldIncidents: state.fieldIncidents.map(inc => 
@@ -1798,7 +1788,7 @@ export const useStore = create<AppState>()(
 
   updateWebhook: async (id, updates) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateWebhook(id, updates);
+      await ApiService.updateWebhook(id, updates);
     }
     set((state) => ({ webhooks: state.webhooks.map(w => w.id === id ? { ...w, ...updates } : w) }));
   },
@@ -1808,7 +1798,7 @@ export const useStore = create<AppState>()(
     const wh = webhooks.find(w => w.id === id);
     logAction('admin', 'delete_webhook', `Removed webhook: ${wh?.name || id}`);
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteWebhook(id);
+      await ApiService.deleteWebhook(id);
     }
     set((state) => ({ webhooks: state.webhooks.filter(w => w.id !== id) }));
   },
@@ -1820,7 +1810,7 @@ export const useStore = create<AppState>()(
     const newActive = !webhook.active;
     logAction('admin', 'toggle_webhook', `${newActive ? 'Enabled' : 'Disabled'} webhook: ${webhook?.name || id}`);
     if (get().isSupabaseConnected) {
-       await SupabaseService.toggleWebhookActive(id, newActive);
+       await ApiService.toggleWebhookActive(id, newActive);
     }
     set((state) => ({
       webhooks: state.webhooks.map(w => w.id === id ? { ...w, active: newActive } : w)
@@ -1833,7 +1823,7 @@ export const useStore = create<AppState>()(
     }));
     
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateSettings(newSettings);
+      await ApiService.updateSettings(newSettings);
     }
   },
 
@@ -1850,7 +1840,7 @@ export const useStore = create<AppState>()(
       status: 'active'
     };
     if (get().isSupabaseConnected) {
-      await SupabaseService.addQRToken(newToken);
+      await ApiService.addQRToken(newToken);
     }
     set(state => ({ qrLogins: [newToken, ...state.qrLogins] }));
     get().logAction('admin', 'generate_qr', `Generated QR token for ${userId ? 'user ' + userId : 'location ' + locationId}`);
@@ -1859,7 +1849,7 @@ export const useStore = create<AppState>()(
 
   revokeQRToken: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.revokeQRToken(id);
+      await ApiService.revokeQRToken(id);
     }
     set(state => ({
       qrLogins: state.qrLogins.map(t => t.id === id ? { ...t, active: false, status: 'revoked' } : t)
@@ -1868,7 +1858,7 @@ export const useStore = create<AppState>()(
 
   loginWithQR: async (token) => {
     if (get().isSupabaseConnected) {
-      const user = await SupabaseService.loginWithQR(token);
+      const user = await ApiService.loginWithQR(token);
       if (user) {
         set({ currentUser: user as User });
         get().logAction(user.id, 'qr_login', `Logged in via QR code (Token: ${token.slice(0, 5)}...)`);
@@ -1919,7 +1909,7 @@ export const useStore = create<AppState>()(
     const newUsers = await Promise.all(newUsersPromises);
     
     if (get().isSupabaseConnected) {
-      await SupabaseService.bulkAddUsers(newUsers.map(u => {
+      await ApiService.bulkAddUsers(newUsers.map(u => {
         const { _plainPassword: _, ...rest } = u; // eslint-disable-line @typescript-eslint/no-unused-vars
         return rest;
       }));
@@ -1958,7 +1948,7 @@ export const useStore = create<AppState>()(
     } as User;
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.addUser(newUser);
+      await ApiService.addUser(newUser);
     }
     
     set(state => ({ users: [...state.users, sanitizeUser(newUser) as User] }));
@@ -1971,7 +1961,7 @@ export const useStore = create<AppState>()(
 
   updateCompanyBranding: async (companyId, branding) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateCompanyBranding(companyId, branding);
+      await ApiService.updateCompanyBranding(companyId, branding);
     }
     set(state => ({
       companies: state.companies.map(c => c.id === companyId ? { ...c, branding: { ...c.branding, ...branding } } : c)
@@ -1980,7 +1970,7 @@ export const useStore = create<AppState>()(
 
   updateCompanySettings: async (companyId, settings: Partial<Company>) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateCompanySettings(companyId, settings);
+      await ApiService.updateCompanySettings(companyId, settings);
     }
     set(state => ({
       companies: state.companies.map(c => c.id === companyId ? { ...c, ...settings } : c)
@@ -2048,7 +2038,7 @@ export const useStore = create<AppState>()(
     };
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateOrderStatus(orderId, newStatus);
+      await ApiService.updateOrderStatus(orderId, newStatus);
     }
 
     set(state => ({
@@ -2076,7 +2066,7 @@ export const useStore = create<AppState>()(
 
   updateLocationBudget: async (locationId, budget) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateLocationBudget(locationId, budget);
+      await ApiService.updateLocationBudget(locationId, budget);
     }
     set(state => ({
       locations: state.locations.map(l => l.id === locationId ? { ...l, monthlyBudget: budget } : l)
@@ -2147,7 +2137,7 @@ export const useStore = create<AppState>()(
     }
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.createTicket(newTicket);
+      await ApiService.createTicket(newTicket);
     }
 
     get().addAlert({ 
@@ -2163,7 +2153,7 @@ export const useStore = create<AppState>()(
     if (assignedTo) updatePayload.assignedTo = assignedTo;
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateTicketStatus(id, updatePayload);
+      await ApiService.updateTicketStatus(id, updatePayload);
     }
     set(state => ({
       supportTickets: state.supportTickets.map(t => 
@@ -2187,7 +2177,7 @@ export const useStore = create<AppState>()(
     if (imageUrl) newMessage.imageUrl = imageUrl;
 
     if (get().isSupabaseConnected) {
-      await SupabaseService.addTicketMessage(newMessage);
+      await ApiService.addTicketMessage(newMessage);
     }
     set(state => ({
       supportTickets: state.supportTickets.map(t => 
@@ -2216,7 +2206,7 @@ export const useStore = create<AppState>()(
   addEmployee: async (employee) => {
     const { isSupabaseConnected } = get();
     if (isSupabaseConnected) {
-      const newEmp = await SupabaseService.addEmployee(employee);
+      const newEmp = await ApiService.addEmployee(employee);
       set(state => ({ employees: [...state.employees, newEmp] }));
     } else {
       const newEmployee: Employee = { ...employee, id: generateUUID() };
@@ -2227,7 +2217,7 @@ export const useStore = create<AppState>()(
 
   updateEmployee: async (id, updates) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateEmployee(id, updates);
+      await ApiService.updateData('employees', id, updates);
     }
     set(state => ({
       employees: state.employees.map(e => e.id === id ? { ...e, ...updates } : e)
@@ -2236,7 +2226,7 @@ export const useStore = create<AppState>()(
 
   deleteEmployee: async (id) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteEmployee(id);
+      await ApiService.deleteEmployee(id);
     }
     set(state => ({ employees: state.employees.filter(e => e.id !== id) }));
   },
@@ -2248,7 +2238,7 @@ export const useStore = create<AppState>()(
     if (file && import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
       try {
         const path = `work-reports/${generateUUID()}-${file.name}`;
-        finalImageUrl = await SupabaseService.uploadFile('work-reports', path, file);
+        finalImageUrl = await ApiService.uploadFile('work-reports', path, file);
       } catch (e) {
         console.error('File upload failed:', e);
         get().addAlert({ message: 'Evidence upload failed. Proceeding with metadata only.', type: 'warning' });
@@ -2272,7 +2262,7 @@ export const useStore = create<AppState>()(
     // 3. Background Sync
     if (get().isSupabaseConnected) {
       try {
-        await SupabaseService.submitWorkReport(newReport);
+        await ApiService.submitWorkReport(newReport);
         get().addAlert({ message: 'Work report synchronized with cloud.', type: 'success' });
       } catch (e) {
         console.error('Supabase Sync Failed [WorkReport]:', e);
@@ -2282,7 +2272,7 @@ export const useStore = create<AppState>()(
   },
   approveWorkReport: async (reportId, supervisorId) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateWorkReport(reportId, { status: 'approved', approvedBy: supervisorId });
+      await ApiService.updateWorkReport(reportId, { status: 'approved', approvedBy: supervisorId });
     }
     set(state => ({
       workReports: state.workReports.map(r => 
@@ -2293,7 +2283,7 @@ export const useStore = create<AppState>()(
   },
   rejectWorkReport: async (reportId, supervisorId) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateWorkReport(reportId, { status: 'rejected', approvedBy: supervisorId });
+      await ApiService.updateWorkReport(reportId, { status: 'rejected', approvedBy: supervisorId });
     }
     set(state => ({
       workReports: state.workReports.map(r => 
@@ -2317,9 +2307,9 @@ export const useStore = create<AppState>()(
     // Hardening Section: Convert Base64 identity captures to persistent Storage Blobs
     if (isBase64 && photoUrl && photoUrl.startsWith('data:') && get().isSupabaseConnected) {
       try {
-        const blob = SupabaseService.base64ToBlob(photoUrl);
+        const blob = ApiService.base64ToBlob(photoUrl);
         const path = `attendance/${employeeId || 'anon'}-${Date.now()}.jpg`;
-        finalImageUrl = await SupabaseService.uploadFile('attendance', path, blob);
+        finalImageUrl = await ApiService.uploadFile('attendance', path, blob);
       } catch (err: any) {
         console.error('Storage Upload Error:', err.message || err);
         get().addAlert({ message: 'Identity photo persistence failed. Manual verification required.', type: 'error' });
@@ -2345,7 +2335,7 @@ export const useStore = create<AppState>()(
         }));
 
         if (get().isSupabaseConnected) {
-          SupabaseService.updateAttendanceRecord(activeRecord.id, updated).catch(e => {
+          ApiService.updateAttendanceRecord(activeRecord.id, updated).catch((e: any) => {
             console.error('Attendance Sync Failed [Out]:', e);
             get().addAlert({ message: 'Offline: Attendance sync deferred.', type: 'warning' });
           });
@@ -2370,7 +2360,7 @@ export const useStore = create<AppState>()(
       set(state => ({ attendanceRecords: [...state.attendanceRecords, newRecord] }));
 
       if (get().isSupabaseConnected) {
-        SupabaseService.submitAttendance(newRecord).catch(e => {
+        ApiService.submitAttendance(newRecord).catch((e: any) => {
           console.error('Attendance Sync Failed [In]:', e);
           get().addAlert({ message: 'Offline: Attendance sync deferred.', type: 'warning' });
         });
@@ -2387,7 +2377,7 @@ export const useStore = create<AppState>()(
   generateLocationQR: async (locationId) => {
     const token = generateUUID();
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateLocation(locationId, { qrToken: token, qrStatus: 'active' });
+      await ApiService.updateLocation(locationId, { qrToken: token, qrStatus: 'active' });
     }
     set(state => ({
       locations: state.locations.map(loc => 
@@ -2400,7 +2390,7 @@ export const useStore = create<AppState>()(
   rotateLocationToken: async (locationId) => {
     const token = generateUUID();
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateLocation(locationId, { qrToken: token, qrStatus: 'active' });
+      await ApiService.updateLocation(locationId, { qrToken: token, qrStatus: 'active' });
     }
     set(state => ({
       locations: state.locations.map(loc => 
@@ -2411,7 +2401,7 @@ export const useStore = create<AppState>()(
 
   updateLocationCoordinates: async (locationId, latitude, longitude) => {
     if (get().isSupabaseConnected) {
-       await SupabaseService.updateLocation(locationId, { latitude, longitude });
+       await ApiService.updateLocation(locationId, { latitude, longitude });
     }
     set(state => ({
       locations: state.locations.map(loc => 
@@ -2425,7 +2415,7 @@ export const useStore = create<AppState>()(
     if (get().isSupabaseConnected) {
       const record = get().attendanceRecords.find(r => r.id === recordId);
       if (record) {
-        await SupabaseService.updateAttendanceRecord(recordId, { metadata: { ...record.metadata, workTag: tag } });
+        await ApiService.updateAttendanceRecord(recordId, { metadata: { ...record.metadata, workTag: tag } });
       }
     }
     set(state => ({
@@ -2437,7 +2427,7 @@ export const useStore = create<AppState>()(
 
   approveAttendance: async (id: string) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateAttendanceRecord(id, { status: 'verified', adminRemarks: 'Biometrically Authenticated' });
+      await ApiService.updateAttendanceRecord(id, { status: 'verified', adminRemarks: 'Biometrically Authenticated' });
     }
     set(state => ({
       attendanceRecords: state.attendanceRecords.map(r => 
@@ -2449,7 +2439,7 @@ export const useStore = create<AppState>()(
 
   flagAttendance: async (id: string, reason: string) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateAttendanceRecord(id, { status: 'flagged', adminRemarks: reason });
+      await ApiService.updateAttendanceRecord(id, { status: 'flagged', adminRemarks: reason });
     }
     set(state => ({
       attendanceRecords: state.attendanceRecords.map(r => 
@@ -2520,7 +2510,7 @@ export const useStore = create<AppState>()(
 
     if (get().isSupabaseConnected) {
       try {
-        await SupabaseService.submitDailyChecklist(employeeId, completedTasks);
+        await ApiService.submitDailyChecklist(employeeId, completedTasks);
       } catch (e) {
         console.error('Failed to sync checklist to Supabase:', e);
       }
@@ -2531,7 +2521,7 @@ export const useStore = create<AppState>()(
 
   reassignShift: async (shiftId, locationId) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateShift(shiftId, { locationId });
+      await ApiService.updateShift(shiftId, { locationId });
     }
     set(state => ({
       employeeShifts: state.employeeShifts.map(s => 
@@ -2547,7 +2537,7 @@ export const useStore = create<AppState>()(
   
   addEmployeeShift: async (shift) => {
     if (get().isSupabaseConnected) {
-       const newShift = await SupabaseService.addShift(shift);
+       const newShift = await ApiService.addShift(shift);
        set(state => ({
          employeeShifts: [...state.employeeShifts, newShift as EmployeeShift]
        }));
@@ -2562,7 +2552,7 @@ export const useStore = create<AppState>()(
 
   deleteEmployeeShift: async (shiftId) => {
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteShift(shiftId);
+      await ApiService.deleteShift(shiftId);
     }
     set(state => ({
       employeeShifts: state.employeeShifts.filter(s => s.id !== shiftId)
@@ -2575,7 +2565,7 @@ export const useStore = create<AppState>()(
     const newRole = { ...role, id: generateUUID() };
     set(state => ({ customRoles: [...state.customRoles, newRole] }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.addCustomRole(newRole);
+      await ApiService.addCustomRole(newRole);
     }
     get().addAlert({ message: `Role ${newRole.name} established.`, type: 'success' });
   },
@@ -2585,7 +2575,7 @@ export const useStore = create<AppState>()(
       customRoles: state.customRoles.map(r => r.id === id ? { ...r, ...updates } : r)
     }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateCustomRole(id, updates);
+      await ApiService.updateCustomRole(id, updates);
     }
     get().addAlert({ message: 'Role configurations updated.', type: 'info' });
   },
@@ -2595,7 +2585,7 @@ export const useStore = create<AppState>()(
       customRoles: state.customRoles.filter(r => r.id !== id)
     }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteCustomRole(id);
+      await ApiService.deleteCustomRole(id);
     }
     get().addAlert({ message: 'Role permanently decommissioned.', type: 'warning' });
   },
@@ -2604,7 +2594,7 @@ export const useStore = create<AppState>()(
     const newAssignment = { ...assignment, id: generateUUID(), createdAt: new Date().toISOString() };
     set(state => ({ workAssignments: [...state.workAssignments, newAssignment] }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.addWorkAssignment(newAssignment);
+      await ApiService.addWorkAssignment(newAssignment);
     }
     get().addAlert({ message: 'New work assignment deployed.', type: 'success' });
   },
@@ -2614,7 +2604,7 @@ export const useStore = create<AppState>()(
       workAssignments: state.workAssignments.map(a => a.id === id ? { ...a, ...updates } : a)
     }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateWorkAssignment(id, updates);
+      await ApiService.updateWorkAssignment(id, updates);
     }
     get().addAlert({ message: 'Work assignment updated.', type: 'info' });
   },
@@ -2626,7 +2616,7 @@ export const useStore = create<AppState>()(
       )
     }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateWorkAssignment(id, { status: 'archived' });
+      await ApiService.updateWorkAssignment(id, { status: 'archived' });
     }
     get().addAlert({ message: 'Work assignment recalled and archived.', type: 'warning' });
   },
@@ -2635,7 +2625,7 @@ export const useStore = create<AppState>()(
     const newProtocol = { ...protocol, id: generateUUID() };
     set(state => ({ siteProtocols: [...state.siteProtocols, newProtocol] }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.addSiteProtocol(newProtocol);
+      await ApiService.addSiteProtocol(newProtocol);
     }
     get().addAlert({ message: 'Site protocol successfully codified.', type: 'success' });
   },
@@ -2644,7 +2634,7 @@ export const useStore = create<AppState>()(
       siteProtocols: state.siteProtocols.filter(p => p.id !== id)
     }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteSiteProtocol(id);
+      await ApiService.deleteSiteProtocol(id);
     }
     get().addAlert({ message: 'Site protocol decommissioned.', type: 'warning' });
   },
@@ -2653,7 +2643,7 @@ export const useStore = create<AppState>()(
     const newReq = { ...request, id: generateUUID(), status: 'pending', createdAt: new Date().toISOString() };
     set(state => ({ timeOffRequests: [newReq as TimeOffRequest, ...state.timeOffRequests] }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.submitTimeOffRequest(newReq);
+      await ApiService.submitTimeOffRequest(newReq);
     }
     get().addAlert({ message: 'Absence request submitted for HR authorization.', type: 'info' });
   },
@@ -2662,7 +2652,7 @@ export const useStore = create<AppState>()(
       timeOffRequests: state.timeOffRequests.map(r => r.id === id ? { ...r, status, adminRemarks } : r)
     }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateTimeOffStatus(id, { status, adminRemarks });
+      await ApiService.updateTimeOffStatus(id, { status, adminRemarks });
     }
     get().addAlert({ message: `Absence request ${status.toUpperCase()}.`, type: 'success' });
   },
@@ -2671,7 +2661,7 @@ export const useStore = create<AppState>()(
       attendanceRecords: state.attendanceRecords.map(r => r.id === id ? { ...r, ...updates } : r)
     }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.updateAttendanceRecord(id, updates);
+      await ApiService.updateAttendanceRecord(id, updates);
     }
     get().addAlert({ message: 'Punch register heavily modified.', type: 'warning' });
   },
@@ -2680,7 +2670,7 @@ export const useStore = create<AppState>()(
       attendanceRecords: state.attendanceRecords.filter(r => r.id !== id)
     }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.deleteAttendanceRecord(id);
+      await ApiService.deleteAttendanceRecord(id);
     }
     get().addAlert({ message: 'Timesheet log violently expunged from database.', type: 'error' });
   },
@@ -2688,7 +2678,7 @@ export const useStore = create<AppState>()(
     const newRecord = { ...record, id: generateUUID(), createdAt: new Date().toISOString() };
     set(state => ({ attendanceRecords: [newRecord as AttendanceRecord, ...state.attendanceRecords] }));
     if (get().isSupabaseConnected) {
-      await SupabaseService.submitAttendance(newRecord);
+      await ApiService.submitAttendance(newRecord);
     }
     get().addAlert({ message: 'Supervisor-originated manual shift shift entry accepted.', type: 'info' });
   },
@@ -2719,13 +2709,13 @@ export const useStore = create<AppState>()(
         console.log(`✅ Disaster Recovery: Pushed ${count} ${label} records.`);
       };
 
-      await push('Products', state.products, (i) => SupabaseService.addProduct(i));
-      await push('Inventory', state.inventory, (i) => SupabaseService.updateStock(i.productId, i.warehouseId, i.quantity));
-      await push('Orders', state.orders, (i) => SupabaseService.placeOrder(i));
-      await push('Inventory logs', state.inventoryLogs, (i) => SupabaseService.addInventoryLog(i));
-      await push('Attendance', state.attendanceRecords, (i) => SupabaseService.submitAttendance(i));
-      await push('Work Reports', state.workReports, (i) => SupabaseService.submitWorkReport(i));
-      await push('Audits', state.auditLogs, (i) => SupabaseService.logAction(i.userId, i.action, i.details));
+      await push('Products', state.products, (i) => ApiService.addProduct(i));
+      await push('Inventory', state.inventory, (i) => ApiService.updateStock(i.productId, i.warehouseId, i.quantity));
+      await push('Orders', state.orders, (i) => ApiService.placeOrder(i));
+      await push('Inventory logs', state.inventoryLogs, (i) => ApiService.addInventoryLog(i));
+      await push('Attendance', state.attendanceRecords, (i) => ApiService.submitAttendance(i));
+      await push('Work Reports', state.workReports, (i) => ApiService.submitWorkReport(i));
+      await push('Audits', state.auditLogs, (i) => ApiService.logAction(i.userId, i.action, i.details));
 
       addAlert({ message: 'Global Cloud Recall successfully executed. Database synchronized.', type: 'success' });
     } catch (e: any) {
