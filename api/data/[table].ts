@@ -75,6 +75,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(405).json({ message: 'Method Not Allowed' });
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    const msg = error?.message || String(error);
+    const lower = msg.toLowerCase();
+    const isAuth =
+      lower.includes('token') ||
+      lower.includes('jwt') ||
+      lower.includes('unauthorized') ||
+      lower.includes('authorization');
+    const status = isAuth ? 401 : 500;
+    res.status(status).json({ message: msg });
   }
 }

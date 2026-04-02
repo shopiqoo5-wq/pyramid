@@ -8,13 +8,37 @@ const fetchApi = async (path: string, options: RequestInit = {}) => {
     ...(options.headers || {}),
   };
 
-  const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Network error';
+    throw new Error(`${msg} (could not reach ${BASE_URL}${path})`);
+  }
+
   if (!response.ok) {
-     const errorData = await response.json().catch(() => ({}));
-     throw new Error(errorData.message || 'API Request failed');
+    const text = await response.text();
+    let detail = '';
+    try {
+      const errorData = JSON.parse(text) as { message?: string; error?: string };
+      detail = errorData.message || errorData.error || '';
+    } catch {
+      detail = text.replace(/\s+/g, ' ').trim().slice(0, 240);
+      if (detail.startsWith('<!') || detail.includes('<html')) {
+        detail =
+          'Server returned a web page instead of JSON — the /api route may not be running (check Vercel deployment and vercel.json rewrites).';
+      }
+    }
+    throw new Error(detail || `HTTP ${response.status} ${response.statusText}`);
   }
   if (response.status === 204) return null;
-  return response.json();
+  const bodyText = await response.text();
+  if (!bodyText) return null;
+  try {
+    return JSON.parse(bodyText);
+  } catch {
+    throw new Error('Invalid JSON from API');
+  }
 };
 
 export const ApiService: any = {
