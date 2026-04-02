@@ -1,5 +1,18 @@
 import mongoose from 'mongoose';
 
+// Prevent Node from crashing the serverless function on Mongo connection errors.
+// Mongoose will emit `connection` -> `error` events; without listeners this can become
+// an unhandled exception that Vercel reports as FUNCTION_INVOCATION_FAILED.
+try {
+  if (mongoose.connection && mongoose.connection.listenerCount('error') === 0) {
+    mongoose.connection.on('error', (err) => {
+      console.error('[mongo] connection error:', err?.message || err);
+    });
+  }
+} catch {
+  // If listenerCount/on are unavailable for some reason, we just continue.
+}
+
 /**
  * Global is used here to maintain a cached connection across hot reloads
  * in development. This prevents connections growing exponentially
