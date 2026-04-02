@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { FilterQuery } from 'mongoose';
 import connectToDatabase from '../_db/mongodb.js';
 import { User } from '../_db/Schemas.js';
 import bcrypt from 'bcryptjs';
@@ -18,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await connectToDatabase();
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email } as FilterQuery<{ email: string }>);
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }

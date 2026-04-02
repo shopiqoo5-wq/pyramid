@@ -10,7 +10,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await connectToDatabase();
     const { userId } = requireAuth(req);
 
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).exec();
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const { password: _pw, ...userWithoutPassword } = user.toObject();
