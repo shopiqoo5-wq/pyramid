@@ -19,7 +19,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await connectToDatabase();
     const { email, password } = req.body;
 
-    const user = await castModel(User).findOne({ email });
+    const M = castModel(User);
+    const user = await M.findOne({ email });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
