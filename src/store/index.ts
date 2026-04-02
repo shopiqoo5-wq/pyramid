@@ -378,9 +378,6 @@ export const useStore = create<AppState>()(
       // We no longer nuke history here, as the user wants logs to be permanent.
       // Hydration from Supabase on next login will refresh these.
     });
-    
-    // Explicitly re-check connection status
-    await get().initSupabase();
   },
 
   initSupabase: async () => {
@@ -391,7 +388,7 @@ export const useStore = create<AppState>()(
       if (!isReachable) {
         set({ isSupabaseConnected: false });
         console.warn('⚠️ Backend unreachable. Falling back to local cache.');
-        addAlert({ message: 'Backend unreachable. Data saved locally for now.', type: 'error' });
+        addAlert({ message: 'Backend unreachable. Saving is disabled until the database is online.', type: 'error' });
         return;
       }
 
@@ -1041,12 +1038,12 @@ export const useStore = create<AppState>()(
 
   addProduct: async (productStart) => {
     try {
-      if (get().isSupabaseConnected) {
-        const product = await ApiService.addProduct(productStart);
-        set((state) => ({ products: [product, ...state.products] }));
-      } else {
-        set((state) => ({ products: [{ ...productStart, id: generateUUID() } as Product, ...state.products] }));
+      if (!get().isSupabaseConnected) {
+        get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
+        return;
       }
+      const product = await ApiService.addProduct(productStart);
+      set((state) => ({ products: [product, ...state.products] }));
       get().addAlert({ message: 'Product successfully indexed.', type: 'success' });
     } catch (err: any) {
       get().addAlert({ message: `Failed to add product: ${err.message}`, type: 'error' });
@@ -1055,9 +1052,11 @@ export const useStore = create<AppState>()(
 
   updateProduct: async (id, updates) => {
     try {
-      if (get().isSupabaseConnected) {
-        await ApiService.updateProduct(id, updates);
+      if (!get().isSupabaseConnected) {
+        get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
+        return;
       }
+      await ApiService.updateProduct(id, updates);
       set((state) => ({ products: state.products.map(p => p.id === id ? { ...p, ...updates } : p) }));
       get().addAlert({ message: 'Product record updated.', type: 'info' });
     } catch (err: any) {
@@ -1067,9 +1066,11 @@ export const useStore = create<AppState>()(
 
   deleteProduct: async (id) => {
     try {
-      if (get().isSupabaseConnected) {
-        await ApiService.deleteProduct(id);
+      if (!get().isSupabaseConnected) {
+        get().addAlert({ message: 'Cannot delete: database is offline.', type: 'error' });
+        return;
       }
+      await ApiService.deleteProduct(id);
       set((state) => ({ products: state.products.filter(p => p.id !== id) }));
       get().addAlert({ message: 'Product decommissioned from catalog.', type: 'warning' });
     } catch (err: any) {
@@ -1079,12 +1080,12 @@ export const useStore = create<AppState>()(
 
   addCompany: async (companyStart) => {
     try {
-      if (get().isSupabaseConnected) {
-        const company = await ApiService.addCompany(companyStart);
-        set((state) => ({ companies: [company, ...state.companies] }));
-      } else {
-        set((state) => ({ companies: [{ ...companyStart, id: generateUUID() } as Company, ...state.companies] }));
+      if (!get().isSupabaseConnected) {
+        get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
+        return;
       }
+      const company = await ApiService.addCompany(companyStart);
+      set((state) => ({ companies: [company, ...state.companies] }));
       get().addAlert({ message: 'Company registry finalized.', type: 'success' });
     } catch (_e: any) {
       get().addAlert({ message: `Failed to add company: ${_e.message}`, type: 'error' });
@@ -1093,9 +1094,11 @@ export const useStore = create<AppState>()(
 
   updateCompany: async (id, updates) => {
     try {
-      if (get().isSupabaseConnected) {
-        await ApiService.updateCompany(id, updates);
+      if (!get().isSupabaseConnected) {
+        get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
+        return;
       }
+      await ApiService.updateCompany(id, updates);
       set((state) => ({ companies: state.companies.map(c => c.id === id ? { ...c, ...updates } : c) }));
       get().addAlert({ message: 'Company governance updated.', type: 'info' });
     } catch (err: any) {
@@ -1105,9 +1108,11 @@ export const useStore = create<AppState>()(
 
   deleteCompany: async (id) => {
     try {
-      if (get().isSupabaseConnected) {
-        await ApiService.deleteCompany(id);
+      if (!get().isSupabaseConnected) {
+        get().addAlert({ message: 'Cannot delete: database is offline.', type: 'error' });
+        return;
       }
+      await ApiService.deleteCompany(id);
       set((state) => ({ companies: state.companies.filter(c => c.id !== id) }));
       get().addAlert({ message: 'Company record expunged.', type: 'warning' });
     } catch (err: any) {
@@ -1117,13 +1122,15 @@ export const useStore = create<AppState>()(
 
   addUser: async (userStart) => {
     try {
+      if (!get().isSupabaseConnected) {
+        get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
+        return;
+      }
       const { username, password, ...rest } = userStart;
       const hashedPassword = await hashPassword(password || 'pyramid123');
       const newUser = { ...rest, id: generateUUID(), username, password: hashedPassword, status: 'active' as const };
       
-      if (get().isSupabaseConnected) {
-         await ApiService.addUser(newUser);
-      }
+      await ApiService.addUser(newUser);
 
       set((state) => ({ users: [sanitizeUser(newUser) as User, ...state.users] }));
       get().addAlert({ message: 'User identity provisioned.', type: 'success' });
