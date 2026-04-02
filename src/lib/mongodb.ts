@@ -1,5 +1,23 @@
 import mongoose from 'mongoose';
 
+// In serverless, some driver failures can surface as unhandled rejections / uncaught exceptions
+// (which would make Vercel return `FUNCTION_INVOCATION_FAILED` before our try/catch runs).
+// These handlers keep the process alive so our API route can return a proper JSON error.
+try {
+  if (process.listenerCount('unhandledRejection') === 0) {
+    process.on('unhandledRejection', (reason) => {
+      console.error('[mongo] unhandledRejection:', reason);
+    });
+  }
+  if (process.listenerCount('uncaughtException') === 0) {
+    process.on('uncaughtException', (err) => {
+      console.error('[mongo] uncaughtException:', (err as any)?.message || err);
+    });
+  }
+} catch {
+  // ignore
+}
+
 // Prevent Node from crashing the serverless function on Mongo connection errors.
 // Mongoose will emit `connection` -> `error` events; without listeners this can become
 // an unhandled exception that Vercel reports as FUNCTION_INVOCATION_FAILED.
