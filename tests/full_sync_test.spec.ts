@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 
 test.use({
   ignoreHTTPSErrors: true,
@@ -35,7 +35,7 @@ test('end-to-end sync and visibility test', async ({ page }) => {
     const bypassBtn = page.locator('button:has-text("Bypass (Testing)")');
     await bypassBtn.waitFor({ state: 'visible', timeout: 5000 });
     await bypassBtn.click();
-  } catch (e) {
+  } catch {
     // If no bypass, just escape
     await page.keyboard.press('Escape');
   }

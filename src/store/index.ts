@@ -12,7 +12,7 @@ import { sendTransactionalSMS, SMS_TEMPLATES } from '../utils/sms';
 import { EmailTemplates } from '../lib/emailNotifications';
 import { mockUsers, mockProducts, mockInventory, mockOrders, mockCompanies, mockBundles, mockPricing, mockEmployees, mockWorkReports, mockAttendance, mockReturnRequests, mockInventoryLogs } from '../mockData';
 import { secureToken, hashPassword, verifyPassword, sanitizeUser } from '../utils/security';
-import { generateUUID } from '../lib/supabaseUtils';
+import { generateUUID } from '../lib/uuid';
 import { calculateIndianGST } from '../utils/gst';
 import { ApiService } from '../lib/apiService';
 
@@ -385,30 +385,19 @@ export const useStore = create<AppState>()(
 
   initSupabase: async () => {
     const { addAlert } = get();
-    
-    // Check if Supabase keys exist
-    const isConfigured = !!import.meta.env.VITE_SUPABASE_URL && 
-                       !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_');
-                       
-    if (!isConfigured) {
-      console.log('ℹ️ Supabase not configured. Using local persistence only.');
-      set({ isSupabaseConnected: false });
-      addAlert({ message: 'Cloud link unconfigured. Running in Local Mode.', type: 'warning' });
-      return;
-    }
 
     try {
       const isReachable = await ApiService.checkConnection();
       if (!isReachable) {
         set({ isSupabaseConnected: false });
-        console.warn('⚠️ Supabase unreachable. Falling back to local cache.');
-        addAlert({ message: 'Supabase unreachable. Data saved locally for now.', type: 'error' });
+        console.warn('⚠️ Backend unreachable. Falling back to local cache.');
+        addAlert({ message: 'Backend unreachable. Data saved locally for now.', type: 'error' });
         return;
       }
 
       set({ isSupabaseConnected: true });
-      console.log('⚡ Digital Nexus: Cloud Sync Active');
-      addAlert({ message: 'Nexus Cloud Link Active. Synchronization online.', type: 'success' });
+      console.log('⚡ Backend connected');
+      addAlert({ message: 'Backend connected. Synchronization online.', type: 'success' });
 
       const fetchData = async <K extends keyof AppState>(
         label: string, 
@@ -1910,13 +1899,13 @@ export const useStore = create<AppState>()(
     
     if (get().isSupabaseConnected) {
       await ApiService.bulkAddUsers(newUsers.map(u => {
-        const { _plainPassword: _, ...rest } = u; // eslint-disable-line @typescript-eslint/no-unused-vars
+        const { _plainPassword: _, ...rest } = u;
         return rest;
       }));
     }
     
     set(state => ({ users: [...state.users, ...newUsers.map(u => {
-      const { _plainPassword: _, ...rest } = u; // eslint-disable-line @typescript-eslint/no-unused-vars
+      const { _plainPassword: _, ...rest } = u;
       return sanitizeUser(rest) as User;
     })] }));
     logAction('admin', 'bulk_user_import', `Imported ${usersArray.length} users for company ${companyId}`);

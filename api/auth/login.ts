@@ -4,7 +4,7 @@ import { User } from '../../src/models/Schemas';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -12,6 +12,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    if (!JWT_SECRET) {
+      return res.status(500).json({ message: 'JWT_SECRET is not set' });
+    }
     await connectToDatabase();
     const { email, password } = req.body;
 

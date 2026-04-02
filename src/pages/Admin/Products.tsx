@@ -19,7 +19,6 @@ import { Modal } from '../../components/ui/Modal';
 import BulkImportModal from './BulkImportModal';
 import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 // generateMasterQRCodeCatalogPDF is now imported dynamically in the click handler.
-import { supabase } from '../../lib/supabase';
 
 const AdminProducts: React.FC = () => {
   const products = useStore(state => state.products);
@@ -28,7 +27,7 @@ const AdminProducts: React.FC = () => {
   const updateProduct = useStore(state => state.updateProduct);
   const deleteProduct = useStore(state => state.deleteProduct);
   const inventory = useStore(state => state.inventory);
-  const updateInventoryQuantity = useStore(state => state.updateInventoryQuantity);
+  const updateStock = useStore(state => state.updateStock);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
@@ -55,6 +54,13 @@ const AdminProducts: React.FC = () => {
   const [newProductImagePreview, setNewProductImagePreview] = useState<string>('');
   const [editProductImageFile, setEditProductImageFile] = useState<File | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.readAsDataURL(file);
+    });
 
   // Mock Warehouses
   const warehouses: Warehouse[] = [
@@ -82,13 +88,8 @@ const AdminProducts: React.FC = () => {
     if (newProductImageFile) {
       setIsUploadingImage(true);
       try {
-        const ext = newProductImageFile.name.split('.').pop();
-        const path = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const { data } = await supabase.storage.from('product-images').upload(path, newProductImageFile);
-        if (data) {
-          const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(path);
-          finalImageUrl = urlData.publicUrl;
-        }
+        // Store inline as a Data URL so it persists without Supabase Storage
+        finalImageUrl = await fileToDataUrl(newProductImageFile);
       } catch (e) { console.error('Image upload error', e); }
       setIsUploadingImage(false);
     }
@@ -117,13 +118,7 @@ const AdminProducts: React.FC = () => {
     if (editProductImageFile) {
       setIsUploadingImage(true);
       try {
-        const ext = editProductImageFile.name.split('.').pop();
-        const path = `products/${Date.now()}.${ext}`;
-        const { data } = await supabase.storage.from('product-images').upload(path, editProductImageFile);
-        if (data) {
-          const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(path);
-          finalImageUrl = urlData.publicUrl;
-        }
+        finalImageUrl = await fileToDataUrl(editProductImageFile);
       } catch (e) { console.error('Image upload error', e); }
       setIsUploadingImage(false);
     }
@@ -136,7 +131,7 @@ const AdminProducts: React.FC = () => {
     if (!selectedProductForInventory) return;
     Object.entries(stockUpdates).forEach(([warehouseId, delta]) => {
       if (delta !== 0) {
-        updateInventoryQuantity(selectedProductForInventory.id, warehouseId, delta);
+        updateStock(selectedProductForInventory.id, warehouseId, delta);
       }
     });
     setIsInventoryModalOpen(false);

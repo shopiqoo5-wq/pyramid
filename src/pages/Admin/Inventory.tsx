@@ -20,7 +20,7 @@ import { Card, Table, Button, EmptyState } from '../../components/ui';
 import { Modal } from '../../components/ui/Modal';
 
 const AdminInventory: React.FC = () => {
-  const { inventory, products, updateInventoryQuantity, inventoryLogs, users } = useStore();
+  const { inventory, products, updateStock, inventoryLogs, users } = useStore();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filterWarehouse, setFilterWarehouse] = useState('all');
@@ -70,7 +70,7 @@ const AdminInventory: React.FC = () => {
   const handleAdjustStock = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedItem) {
-      updateInventoryQuantity(selectedItem.productId, selectedItem.warehouseId, adjustmentQty, adjustmentReason);
+      updateStock(selectedItem.productId, selectedItem.warehouseId, adjustmentQty, adjustmentReason);
       setIsAdjustModalOpen(false);
       setSelectedItem(null);
       setAdjustmentQty(0);

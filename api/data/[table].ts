@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import connectToDatabase from '../../src/lib/mongodb';
 import * as Models from '../../src/models/Schemas';
+import mongoose from 'mongoose';
+import { requireAuth } from '../_utils/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { table } = req.query;
@@ -23,44 +25,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   const Model = modelMap[tableName];
-  if (!Model) {
-    return res.status(404).json({ message: 'Table not found' });
-  }
+  const DynamicModel =
+    Model ||
+    (mongoose.models[`Dynamic_${tableName}`] ||
+      mongoose.model(
+        `Dynamic_${tableName}`,
+        new mongoose.Schema({}, { strict: false, timestamps: true })
+      ));
+  const ActiveModel = DynamicModel;
 
   try {
-    const conn = await connectToDatabase();
-    const isMock = (conn as any).mock;
-
-    if (isMock) {
-       // Cloud Recall Fallback: Return empty or mock based on table
-       if (req.method === 'GET') return res.status(200).json([]);
-       return res.status(201).json(req.body);
-    }
+    // All data routes require auth (read + write)
+    requireAuth(req);
+    await connectToDatabase();
 
     if (req.method === 'GET') {
       const { id, ...filters } = req.query;
       if (id) {
-        const item = await Model.findById(id);
+        const item = await ActiveModel.findById(id);
         return res.status(200).json(item);
       }
-      const data = await Model.find(filters);
+      const mongoFilters: Record<string, any> = {};
+      for (const [k, v] of Object.entries(filters)) {
+        if (typeof v === 'undefined') continue;
+        if (Array.isArray(v)) mongoFilters[k] = v[0];
+        else mongoFilters[k] = v;
+      }
+      const data = await ActiveModel.find(mongoFilters);
       return res.status(200).json(data);
     }
 
     if (req.method === 'POST') {
-      const newItem = await Model.create(req.body);
+      const newItem = await ActiveModel.create(req.body);
       return res.status(201).json(newItem);
     }
 
     if (req.method === 'PUT') {
        const { id } = req.query;
-       const updated = await Model.findByIdAndUpdate(id, req.body, { new: true });
+       const updated = await ActiveModel.findByIdAndUpdate(id, req.body, { new: true });
        return res.status(200).json(updated);
     }
 
     if (req.method === 'DELETE') {
        const { id } = req.query;
-       await Model.findByIdAndDelete(id);
+       await ActiveModel.findByIdAndDelete(id);
        return res.status(204).end();
     }
 

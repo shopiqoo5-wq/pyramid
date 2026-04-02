@@ -382,7 +382,7 @@ const InventoryControl: React.FC = () => {
                           title="Mark as Damaged / Write-off"
                           onClick={() => {
                             if (confirm(`Mark ${batch.quantity} units of batch ${batch.batchNumber} as damaged?`)) {
-                              useStore.getState().updateInventoryQuantity(batch.productId, batch.warehouseId, -batch.quantity, 'Damaged Inventory Write-off', batch.id);
+                              useStore.getState().updateStock(batch.productId, batch.warehouseId, -batch.quantity, 'Damaged Inventory Write-off', undefined, batch.id);
                             }
                           }}
                         >

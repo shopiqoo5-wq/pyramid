@@ -205,9 +205,9 @@ export const ApiService: any = {
      for (const table of tables) {
         try {
            data[table] = await this.fetchData(table);
-        } catch (e) {
-           data[table] = [];
-        }
+         } catch {
+            data[table] = [];
+         }
      }
      return data;
   }

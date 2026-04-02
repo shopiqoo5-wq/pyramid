@@ -60,7 +60,6 @@ export async function verifyPassword(plainText: string, stored: string): Promise
  * SEC-11: Prevents password exposure through Zustand DevTools.
  */
 export function sanitizeUser<T extends { password?: string; _raw?: unknown }>(user: T): Omit<T, 'password'> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { password: _pw, ...safe } = user;
   return safe as Omit<T, 'password'>;
 }

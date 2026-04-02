@@ -215,7 +215,7 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, initialPa
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
-  }, [step, scannedData, locations]);
+  }, [step, scannedData, locations, isSupabaseConnected]);
 
   useEffect(() => {
     let stream: MediaStream | null = null;

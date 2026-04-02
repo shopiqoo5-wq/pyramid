@@ -14,10 +14,8 @@ if (!cached) {
 }
 
 async function connectToDatabase() {
-  // If no URI, we enter "Virtual Mode" (Mocking the connection so the API doesn't 500)
-  if (!MONGODB_URI || MONGODB_URI.includes('cluster0.mongodb.net')) {
-    console.warn('⚠️ No MONGODB_URI found. Nexus entering Virtual Persistence Mode.');
-    return { connection: { state: 1 }, mock: true };
+  if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI is not set. Backend persistence requires a real database connection.');
   }
 
   if (cached.conn) {

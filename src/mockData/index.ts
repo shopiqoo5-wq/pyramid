@@ -1,6 +1,6 @@
 import type { Company, User, Product, InventoryItem, ClientPricing, Order, ProductBundle, Employee, WorkReport, AttendanceRecord } from '../types';
 import { mockHash } from '../utils/security';
-import { generateUUID } from '../lib/supabaseUtils';
+import { generateUUID } from '../lib/uuid';
 
 export const mockCompanies: Company[] = [
   { id: '11111111-1111-4111-8111-111111111111', name: 'Alpha Corp (Gold Tier)', companyCode: 'ALPHA', gstNumber: '27AABBCC1234F1Z1', pointOfContact: 'John Doe', creditLimit: 50000, availableCredit: 45000, status: 'active' },
