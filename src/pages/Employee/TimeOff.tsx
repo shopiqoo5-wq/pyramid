@@ -17,7 +17,12 @@ const TimeOff: React.FC = () => {
   const [newReq, setNewReq] = useState({ type: 'Sick' as const, startDate: '', endDate: '', reason: '' });
 
   const employee = employees.find(e => e.userId === currentUser?.id);
-  const myRequests = timeOffRequests.filter(r => r.employeeId === employee?.id);
+  const myRequests = timeOffRequests.filter(
+    (r) =>
+      r.employeeId === employee?.id ||
+      r.employeeId === currentUser?.id ||
+      r.userId === currentUser?.id
+  );
 
   return (
     <div className="employee-main animate-fade-in" style={{ paddingBottom: '8rem' }}>
@@ -112,17 +117,18 @@ const TimeOff: React.FC = () => {
                   className="flex-1" 
                   disabled={!newReq.startDate || !newReq.endDate}
                   onClick={() => {
-                    if (employee) {
-                      submitTimeOffRequest({
-                        employeeId: employee.id,
-                        type: newReq.type as 'Sick' | 'Vacation' | 'Unpaid',
-                        startDate: newReq.startDate,
-                        endDate: newReq.endDate,
-                        reason: newReq.reason
-                      });
-                      setShowModal(false);
-                      setNewReq({ type: 'Sick', startDate: '', endDate: '', reason: '' });
-                    }
+                    const effectiveEmployeeId = employee?.id || currentUser?.id;
+                    if (!effectiveEmployeeId || !currentUser) return;
+                    submitTimeOffRequest({
+                      employeeId: effectiveEmployeeId,
+                      userId: currentUser.id,
+                      type: newReq.type as 'Sick' | 'Vacation' | 'Unpaid',
+                      startDate: newReq.startDate,
+                      endDate: newReq.endDate,
+                      reason: newReq.reason
+                    });
+                    setShowModal(false);
+                    setNewReq({ type: 'Sick', startDate: '', endDate: '', reason: '' });
                   }}
                 >{t('common.submit')}</Button>
              </div>

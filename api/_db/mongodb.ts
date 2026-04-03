@@ -45,6 +45,7 @@ export default async function connectToDatabase() {
       serverSelectionTimeoutMS: 3000,
       connectTimeoutMS: 3000,
       maxPoolSize: 1,
+      autoIndex: false,
     } as any);
   } catch (e) {
     cached.conn = null;

@@ -18,6 +18,16 @@ import BiometricMatches from './BiometricMatches';
 import Timesheets from './Timesheets';
 import QRGeneration from './QRGeneration';
 
+function employeeForWorkReport(
+  employees: { id: string; userId?: string; name?: string; role?: string }[],
+  report: { employeeId: string; userId?: string }
+) {
+  return (
+    employees.find((e) => e.id === report.employeeId || e.userId === report.employeeId) ||
+    (report.userId ? employees.find((e) => e.userId === report.userId) : undefined)
+  );
+}
+
 const WorkforceHub: React.FC = () => {
   const employees = useStore(state => state.employees);
   const timeOffRequests = useStore(state => state.timeOffRequests);
@@ -273,8 +283,11 @@ const WorkforceHub: React.FC = () => {
             {[
               ...attendanceRecords.map(r => ({ ...r, type: 'attendance' as const, ts: r.checkIn || (r as any).timestamp || new Date().toISOString() })),
               ...workReports.map(r => ({ ...r, type: 'report' as const, ts: r.createdAt || (r as any).timestamp || new Date().toISOString() }))
-            ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()).map(activity => {
-              const emp = employees.find(e => e.id === activity.employeeId);
+              ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()).map(activity => {
+              const emp =
+                activity.type === 'report'
+                  ? employeeForWorkReport(employees, activity as any)
+                  : employees.find((e) => e.id === activity.employeeId);
               const dateObj = new Date(activity.ts);
               
               if (activity.type === 'attendance') {
@@ -370,14 +383,14 @@ const WorkforceHub: React.FC = () => {
                  { key: 'image', header: 'EVIDENCE', render: (report: any) => (
                    <div 
                      style={{ width: '60px', height: '60px', borderRadius: '10px', overflow: 'hidden', border: '2px solid var(--border)', background: 'var(--surface-hover)', cursor: 'zoom-in' }}
-                     onClick={(e) => { e.stopPropagation(); setSelectedEvidence({ ...report, type: 'report', name: employees.find(emp => emp.id === report.employeeId)?.name }); }}
+                     onClick={(e) => { e.stopPropagation(); setSelectedEvidence({ ...report, type: 'report', name: employeeForWorkReport(employees, report)?.name }); }}
                      className="lift"
                    >
                      <img src={report.imageUrl} alt="Work" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                    </div>
                  )},
                  { key: 'staff', header: 'FIELD OPERATIVE', render: (report: any) => {
-                   const emp = employees.find(e => e.id === report.employeeId);
+                   const emp = employeeForWorkReport(employees, report);
                    return (
                      <div style={{ display: 'flex', flexDirection: 'column' }}>
                        <span style={{ fontWeight: 800 }}>{emp?.name || 'Unknown'}</span>
@@ -408,7 +421,7 @@ const WorkforceHub: React.FC = () => {
                        <Button 
                          variant="secondary" 
                          size="sm" 
-                         onClick={(e) => { e.stopPropagation(); setSelectedEvidence({ ...report, type: 'report', name: employees.find(emp => emp.id === report.employeeId)?.name }); }}
+                         onClick={(e) => { e.stopPropagation(); setSelectedEvidence({ ...report, type: 'report', name: employeeForWorkReport(employees, report)?.name }); }}
                          className="lift"
                        >
                          View
@@ -885,7 +898,11 @@ const WorkforceHub: React.FC = () => {
           >
             {(() => {
               const emp = employees.find(e => e.id === selectedEmpId);
-              const empWorkReports = workReports.filter(r => r.employeeId === selectedEmpId);
+              const empWorkReports = workReports.filter((r) => {
+                if (r.employeeId === selectedEmpId) return true;
+                if (emp?.userId && (r.employeeId === emp.userId || r.userId === emp.userId)) return true;
+                return false;
+              });
               const empAttendance = attendanceRecords.filter(r => r.employeeId === selectedEmpId);
               const completionRate = empWorkReports.length > 0 
                 ? (empWorkReports.filter(r => r.status === 'approved').length / empWorkReports.length * 100).toFixed(0)

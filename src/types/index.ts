@@ -549,6 +549,8 @@ export interface EmployeeShift {
 export interface TimeOffRequest {
   id: string;
   employeeId: string;
+  /** Set when employeeId is a user-id fallback so admin filters can reconcile. */
+  userId?: string;
   type: 'Sick' | 'Vacation' | 'Unpaid';
   startDate: string;
   endDate: string;

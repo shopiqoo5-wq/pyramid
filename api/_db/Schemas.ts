@@ -102,9 +102,25 @@ const AttendanceSchema = new mongoose.Schema(
 );
 addIdVirtual(AttendanceSchema);
 
+const TimeOffRequestSchema = new mongoose.Schema(
+  {
+    employeeId: { type: String, required: true },
+    userId: { type: String },
+    type: { type: String },
+    startDate: { type: String },
+    endDate: { type: String },
+    reason: { type: String },
+    status: { type: String, default: 'pending' },
+    adminRemarks: { type: String },
+  },
+  { ...opts, collection: 'time_off_requests' }
+);
+addIdVirtual(TimeOffRequestSchema);
+
 const WorkReportSchema = new mongoose.Schema(
   {
     employeeId: { type: String, required: true },
+    userId: { type: String },
     locationId: { type: String },
     remarks: { type: String },
     imageUrl: { type: String },
@@ -158,8 +174,9 @@ addIdVirtual(OrderSchema);
 
 const TicketSchema = new mongoose.Schema(
   {
-    customId: { type: String, required: true, unique: true },
-    companyId: { type: String, required: true },
+    // sparse + not required: legacy / partial docs must not break reads (unique index allows multiple “missing” keys)
+    customId: { type: String, sparse: true, unique: true },
+    companyId: { type: String },
     userId: { type: String },
     title: { type: String },
     description: { type: String },
@@ -204,6 +221,8 @@ export const Warehouse = mongoose.models.Warehouse || mongoose.model('Warehouse'
 export const Inventory = mongoose.models.Inventory || mongoose.model('Inventory', InventorySchema);
 export const Employee = mongoose.models.Employee || mongoose.model('Employee', EmployeeSchema);
 export const Attendance = mongoose.models.Attendance || mongoose.model('Attendance', AttendanceSchema);
+export const TimeOffRequest =
+  mongoose.models.TimeOffRequest || mongoose.model('TimeOffRequest', TimeOffRequestSchema);
 export const WorkReport = mongoose.models.WorkReport || mongoose.model('WorkReport', WorkReportSchema);
 export const Incident = mongoose.models.Incident || mongoose.model('Incident', IncidentSchema);
 export const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema);

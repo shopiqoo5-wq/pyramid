@@ -1,4 +1,12 @@
 {
+  "build": {
+    "env": {
+      "NODE_OPTIONS": "--disable-warning=DEP0169"
+    }
+  },
+  "env": {
+    "NODE_OPTIONS": "--disable-warning=DEP0169"
+  },
   "rewrites": [
     {
       "source": "/((?!api/).*)",

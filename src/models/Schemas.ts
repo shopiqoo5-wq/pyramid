@@ -84,6 +84,7 @@ addIdVirtual(AttendanceSchema);
 
 const WorkReportSchema = new mongoose.Schema({
   employeeId: { type: String, required: true },
+  userId: { type: String },
   locationId: { type: String },
   remarks: { type: String },
   imageUrl: { type: String },
@@ -126,8 +127,8 @@ const OrderSchema = new mongoose.Schema({
 addIdVirtual(OrderSchema);
 
 const TicketSchema = new mongoose.Schema({
-  customId: { type: String, required: true, unique: true },
-  companyId: { type: String, required: true },
+  customId: { type: String, sparse: true, unique: true },
+  companyId: { type: String },
   userId: { type: String },
   title: { type: String },
   description: { type: String },

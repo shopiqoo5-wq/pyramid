@@ -58,7 +58,9 @@ const EmployeeDashboard: React.FC = () => {
   // Supervisor logic: Get pending reports for this location
   const pendingTeamReports = role === 'Supervisor' 
     ? workReports.filter(r => {
-        const reportEmployee = employees.find(e => e.id === r.employeeId);
+        const reportEmployee =
+          employees.find((e) => e.id === r.employeeId || e.userId === r.employeeId) ||
+          (r.userId ? employees.find((e) => e.userId === r.userId) : undefined);
         return reportEmployee?.locationId === employee?.locationId && r.status === 'pending' && r.employeeId !== employee?.id;
       })
     : [];

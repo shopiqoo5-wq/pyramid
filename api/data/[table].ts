@@ -19,6 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     'users': Models.User,
     'employees': Models.Employee,
     'attendance_records': Models.Attendance,
+    'time_off_requests': Models.TimeOffRequest,
     'work_reports': Models.WorkReport,
     'field_incidents': Models.Incident,
     'orders': Models.Order,
@@ -35,16 +36,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ));
   const ActiveModel = castModel(DynamicModel);
 
+  const collectionName =
+    typeof (ActiveModel as any)?.collection?.collectionName === 'string'
+      ? (ActiveModel as any).collection.collectionName
+      : tableName;
+
+  const findViaNativeDriver = async (filter: Record<string, any>) => {
+    const db = mongoose.connection.db;
+    if (!db) return [];
+    return db.collection(collectionName).find(filter).toArray();
+  };
+
+  const findOneViaNativeDriver = async (filter: Record<string, any>) => {
+    const db = mongoose.connection.db;
+    if (!db) return null;
+    return db.collection(collectionName).findOne(filter);
+  };
+
   try {
     // All data routes require auth (read + write)
     requireAuth(req);
     await connectToDatabase();
 
     if (req.method === 'GET') {
-      const { id, ...filters } = req.query;
+      const q = req.query as Record<string, string | string[] | undefined>;
+      const { id, table: _routeTable, ...filters } = q;
       if (id) {
-        const item = await ActiveModel.findById(id);
-        return res.status(200).json(item);
+        try {
+          const item = await ActiveModel.findById(id).lean().exec();
+          return res.status(200).json(item);
+        } catch (e: any) {
+          if (e?.name === 'CastError') return res.status(200).json(null);
+          try {
+            let oid: mongoose.Types.ObjectId;
+            try {
+              oid = new mongoose.Types.ObjectId(String(id));
+            } catch {
+              return res.status(200).json(null);
+            }
+            const one = await findOneViaNativeDriver({ _id: oid });
+            return res.status(200).json(one ?? null);
+          } catch {
+            return res.status(200).json(null);
+          }
+        }
       }
       const mongoFilters: Record<string, any> = {};
       for (const [k, v] of Object.entries(filters)) {
@@ -52,13 +87,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (Array.isArray(v)) mongoFilters[k] = v[0];
         else mongoFilters[k] = v;
       }
-      const data = await ActiveModel.find(mongoFilters);
-      return res.status(200).json(data);
+      try {
+        const data = await ActiveModel.find(mongoFilters).lean().exec();
+        return res.status(200).json(data);
+      } catch (e: any) {
+        if (e?.name === 'CastError') return res.status(200).json([]);
+        try {
+          const raw = await findViaNativeDriver(mongoFilters);
+          return res.status(200).json(raw);
+        } catch (e2) {
+          console.error(`[data/${tableName}] GET list failed:`, e?.message || e, (e2 as any)?.message || e2);
+          return res.status(200).json([]);
+        }
+      }
     }
 
     if (req.method === 'POST') {
-      const newItem = await ActiveModel.create(req.body);
-      return res.status(201).json(newItem);
+      try {
+        const newItem = await ActiveModel.create(req.body);
+        return res.status(201).json(newItem);
+      } catch (createErr: any) {
+        if (createErr?.name === 'ValidationError') {
+          return res.status(400).json({ message: createErr.message || 'Validation failed' });
+        }
+        throw createErr;
+      }
     }
 
     if (req.method === 'PUT') {

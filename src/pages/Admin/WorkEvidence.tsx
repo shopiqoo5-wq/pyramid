@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
+import { ApiService } from '../../lib/apiService';
 import { Card, Badge, Button, Input } from '../../components/ui';
 import { 
   LuSearch, LuCheck, LuX, 
@@ -12,6 +13,7 @@ const WorkEvidence: React.FC = () => {
   const currentUser = useStore(state => state.currentUser);
   const workReports = useStore(state => state.workReports);
   const employees = useStore(state => state.employees);
+  const users = useStore(state => state.users);
   const locations = useStore(state => state.locations);
   const approveWorkReport = useStore(state => state.approveWorkReport);
   const rejectWorkReport = useStore(state => state.rejectWorkReport);
@@ -30,17 +32,44 @@ const WorkEvidence: React.FC = () => {
     setIsRefreshing(false);
   };
 
-  // Sorting: Pending first, then newest
-  const filteredReports = workReports.filter(report => {
-    const emp = employees.find(e => e.id === report.employeeId);
-    const matchesSearch = emp?.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || report.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  }).sort((a, b) => {
-    if (a.status === 'pending' && b.status !== 'pending') return -1;
-    if (b.status === 'pending' && a.status !== 'pending') return 1;
-    return new Date(b.createdAt || (b as any).timestamp || '').getTime() - new Date(a.createdAt || (a as any).timestamp || '').getTime();
-  });
+  const resolveStaff = useCallback(
+    (report: (typeof workReports)[number]) => {
+      const emp =
+        employees.find((e) => e.id === report.employeeId || e.userId === report.employeeId) ||
+        (report.userId ? employees.find((e) => e.userId === report.userId) : undefined);
+      if (emp) return { emp, displayName: emp.name || 'Unknown' };
+      const uid = report.userId || report.employeeId;
+      const user = users.find((u) => u.id === uid);
+      if (user) return { emp: undefined, displayName: user.name || user.email || 'Unknown' };
+      return { emp: undefined, displayName: 'Unknown' };
+    },
+    [employees, users]
+  );
+
+  // Sorting: Pending first, then newest (search must not throw when no employee row matches)
+  const filteredReports = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return workReports
+      .filter((report) => {
+        const { displayName } = resolveStaff(report);
+        const matchesSearch =
+          !q ||
+          displayName.toLowerCase().includes(q) ||
+          (report.remarks || '').toLowerCase().includes(q);
+        const matchesStatus =
+          filterStatus === 'all' ||
+          String(report.status || '').toLowerCase() === filterStatus;
+        return matchesSearch && matchesStatus;
+      })
+      .sort((a, b) => {
+        if (String(a.status || '').toLowerCase() === 'pending' && String(b.status || '').toLowerCase() !== 'pending') return -1;
+        if (String(b.status || '').toLowerCase() === 'pending' && String(a.status || '').toLowerCase() !== 'pending') return 1;
+        return (
+          new Date(b.createdAt || (b as any).timestamp || '').getTime() -
+          new Date(a.createdAt || (a as any).timestamp || '').getTime()
+        );
+      });
+  }, [workReports, resolveStaff, searchTerm, filterStatus]);
 
   const handleApprove = (id: string) => {
     if (!currentUser) return;
@@ -64,7 +93,7 @@ const WorkEvidence: React.FC = () => {
           <p style={{ color: 'var(--text-muted)' }}>Audit, verify, and grade photographic evidence submitted by field operatives.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          {isSupabaseConnected && (
+          {(isSupabaseConnected || ApiService.hasAuthToken()) && (
             <Button 
               variant="ghost" 
               onClick={handleRefresh}
@@ -109,12 +138,13 @@ const WorkEvidence: React.FC = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
         <AnimatePresence>
           {filteredReports.map(report => {
-            const emp = employees.find(e => e.id === report.employeeId);
-            const loc = locations.find(l => l.id === emp?.locationId);
+            const { emp, displayName } = resolveStaff(report);
+            const loc = locations.find(l => l.id === emp?.locationId || l.id === report.locationId);
+            const st = String(report.status || '').toLowerCase();
 
             return (
               <motion.div 
-                key={report.id}
+                key={report.id || (report as any)._id || report.employeeId + (report.createdAt || '')}
                 layout
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -124,9 +154,9 @@ const WorkEvidence: React.FC = () => {
                 <Card variant="glass" style={{ 
                   padding: 0, 
                   overflow: 'hidden', 
-                  border: report.status === 'pending' 
+                  border: st === 'pending' 
                     ? '1px solid var(--warning)' 
-                    : report.status === 'rejected'
+                    : st === 'rejected'
                     ? '1px solid var(--danger)'
                     : '1px solid var(--border)',
                   position: 'relative'
@@ -147,9 +177,9 @@ const WorkEvidence: React.FC = () => {
                     
                     {/* Status Badge Overlay */}
                     <div style={{ position: 'absolute', top: '1rem', right: '1rem' }}>
-                      {report.status === 'pending' && <Badge variant="warning" className="pulse">AWAITING QA</Badge>}
-                      {report.status === 'approved' && <Badge variant="success">VERIFIED</Badge>}
-                      {report.status === 'rejected' && <Badge variant="danger">REJECTED</Badge>}
+                      {st === 'pending' && <Badge variant="warning" className="pulse">AWAITING QA</Badge>}
+                      {st === 'approved' && <Badge variant="success">VERIFIED</Badge>}
+                      {st === 'rejected' && <Badge variant="danger">REJECTED</Badge>}
                     </div>
 
                     <div style={{ position: 'absolute', bottom: '1rem', right: '1rem', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', padding: '0.25rem 0.5rem', borderRadius: '8px', color: '#fff', fontSize: '0.7rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -162,10 +192,10 @@ const WorkEvidence: React.FC = () => {
                   <div style={{ padding: '1.25rem' }}>
                     <div style={{ display: 'flex', gap: '12px', marginBottom: '1rem', alignItems: 'center' }}>
                       <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>
-                        {emp?.name.charAt(0) || '?'}
+                        {displayName.charAt(0) || '?'}
                       </div>
                       <div>
-                        <div style={{ fontWeight: 900, color: 'var(--text-main)', fontSize: '0.95rem' }}>{emp?.name || 'Unknown'}</div>
+                        <div style={{ fontWeight: 900, color: 'var(--text-main)', fontSize: '0.95rem' }}>{displayName}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{loc?.name || 'No Site Assigned'}</div>
                       </div>
                     </div>
@@ -176,7 +206,7 @@ const WorkEvidence: React.FC = () => {
                     </div>
 
                     {/* Actions */}
-                    {report.status === 'pending' && (
+                    {st === 'pending' && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                         <Button 
                           variant="ghost" 

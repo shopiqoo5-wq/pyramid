@@ -16,6 +16,9 @@ import { generateUUID } from '../lib/uuid';
 import { calculateIndianGST } from '../utils/gst';
 import { ApiService } from '../lib/apiService';
 
+/** Prevents overlapping hydrations (parallel /api/data/* without token + duplicate work). */
+let initSupabaseInFlight: Promise<void> | null = null;
+
 const SYSTEM_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface CartItem {
@@ -379,6 +382,9 @@ export const useStore = create<AppState>()(
   },
 
   initSupabase: async () => {
+    if (initSupabaseInFlight) return initSupabaseInFlight;
+
+    initSupabaseInFlight = (async () => {
     const { addAlert } = get();
 
     try {
@@ -391,20 +397,39 @@ export const useStore = create<AppState>()(
       }
 
       set({ isSupabaseConnected: true });
-      console.log('⚡ Backend connected');
+      console.log('⚡ Backend reachable');
+
+      try {
+        const sessionUser = await ApiService.getCurrentUser();
+        if (sessionUser) {
+          set({ currentUser: sessionUser });
+          console.log(`👤 Session restored: ${sessionUser.name}`);
+        }
+      } catch {
+        console.warn('Session restore skipped.');
+      }
+
+      if (!ApiService.hasAuthToken()) {
+        console.log('ℹ️ Not signed in — skipping cloud data fetch (avoids 401 on protected routes).');
+        return;
+      }
+
       addAlert({ message: 'Backend connected. Synchronization online.', type: 'success' });
 
       const fetchData = async <K extends keyof AppState>(
-        label: string, 
-        fetcher: () => Promise<any>, 
+        label: string,
+        fetcher: () => Promise<any>,
         setter: (data: any) => void,
-        _stateKey: K
+        _stateKey: K,
+        allowEmptyReplace = false
       ) => {
         try {
           const cloudData = await fetcher();
-          if (cloudData && Array.isArray(cloudData) && cloudData.length > 0) {
+          if (!Array.isArray(cloudData)) return;
+          if (cloudData.length > 0 || allowEmptyReplace) {
             setter(cloudData);
-            console.log(`✅ Synced: ${label}`);
+            if (cloudData.length > 0) console.log(`✅ Synced: ${label}`);
+            else console.log(`ℹ️ Cloud ${label} empty — replaced local list from server.`);
           } else {
             console.log(`ℹ️ Cloud ${label} empty. Retaining local cache.`);
           }
@@ -421,10 +446,10 @@ export const useStore = create<AppState>()(
         fetchData('Orders', () => ApiService.getOrders(), (d) => set({ orders: d }), 'orders'),
         fetchData('Inventory', ApiService.getInventory, (d) => set({ inventory: d }), 'inventory'),
         fetchData('Users', ApiService.getUsers, (d) => set({ users: d }), 'users'),
-        fetchData('Attendance', () => ApiService.getAttendance(), (d) => set({ attendanceRecords: d }), 'attendanceRecords'),
-        fetchData('Work Reports', ApiService.getWorkReports, (d) => set({ workReports: d }), 'workReports'),
-        fetchData('Incidents', ApiService.getIncidents, (d) => set({ fieldIncidents: d }), 'fieldIncidents'),
-        fetchData('Time Off', ApiService.getTimeOffRequests, (d) => set({ timeOffRequests: d }), 'timeOffRequests'),
+        fetchData('Attendance', () => ApiService.getAttendance(), (d) => set({ attendanceRecords: d }), 'attendanceRecords', true),
+        fetchData('Work Reports', ApiService.getWorkReports, (d) => set({ workReports: d }), 'workReports', true),
+        fetchData('Incidents', ApiService.getIncidents, (d) => set({ fieldIncidents: d }), 'fieldIncidents', true),
+        fetchData('Time Off', ApiService.getTimeOffRequests, (d) => set({ timeOffRequests: d }), 'timeOffRequests', true),
         fetchData('Shifts', ApiService.getShifts, (d) => set({ employeeShifts: d }), 'employeeShifts'),
         fetchData('Employees', ApiService.getEmployees, (d) => set({ employees: d }), 'employees'),
         fetchData('Protocols', ApiService.getSiteProtocols, (d) => set({ siteProtocols: d }), 'siteProtocols'),
@@ -434,7 +459,7 @@ export const useStore = create<AppState>()(
         fetchData('Audit Logs', ApiService.getAuditLogs, (d) => set({ auditLogs: d }), 'auditLogs'),
         fetchData('Inventory Logs', ApiService.getInventoryLogs, (d) => set({ inventoryLogs: d }), 'inventoryLogs'),
         fetchData('Quotations', ApiService.getQuotations, (d) => set({ quotations: d }), 'quotations'),
-        fetchData('Tickets', () => ApiService.getTickets(), (d) => set({ supportTickets: d }), 'supportTickets'),
+        fetchData('Tickets', () => ApiService.getTickets(), (d) => set({ supportTickets: d }), 'supportTickets', true),
         fetchData('Recurring Orders', () => ApiService.getRecurringOrders(), (d) => set({ recurringOrders: d }), 'recurringOrders'),
         fetchData('Webhooks', ApiService.getWebhooks, (d) => set({ webhooks: d }), 'webhooks'),
         fetchData('Compliance Docs', () => ApiService.getComplianceDocs(), (d) => set({ complianceDocs: d }), 'complianceDocs'),
@@ -460,21 +485,17 @@ export const useStore = create<AppState>()(
         await fetchData(`${user.name} Notifications`, () => ApiService.getNotifications(user.id), (d) => set({ notifications: d }), 'notifications');
       }
 
-      // Attempt to restore session
-      try {
-        const currentUser = await ApiService.getCurrentUser();
-        if (currentUser) {
-          set({ currentUser });
-          console.log(`👤 Auth Verified: ${currentUser.name}`);
-        }
-      } catch {
-        console.warn('Current user verification skipped.');
-      }
-
     } catch (err: any) {
       console.error('CRITICAL: Supabase hydration crashed:', err);
       addAlert({ message: 'Cloud sync interrupted. Running in local-only mode.', type: 'warning' });
       set({ isSupabaseConnected: false });
+    }
+    })();
+
+    try {
+      await initSupabaseInFlight;
+    } finally {
+      initSupabaseInFlight = null;
     }
   },
 
@@ -1727,16 +1748,35 @@ export const useStore = create<AppState>()(
   },
 
   submitIncident: async (incident, file) => {
-    let finalImageUrl = incident.imageUrl || '';
-    
-    // Hardening Section: If a real file is provided, upload it to Supabase Storage
-    if (file && get().isSupabaseConnected) {
+    const stockImage =
+      'https://images.unsplash.com/photo-1581094794329-c8112a89af12?auto=format&fit=crop&q=80&w=800';
+    let finalImageUrl = '';
+
+    if (file) {
       try {
         const path = `incidents/${generateUUID()}-${file.name}`;
-        finalImageUrl = await ApiService.uploadFile('incidents', path, file);
-      } catch {
-        get().addAlert({ message: 'Incident evidence upload deferred. Metadata persisted.', type: 'info' });
+        finalImageUrl = await ApiService.uploadFile('incidents', path, file, {
+          maxEdge: 1600,
+          jpegQuality: 0.8,
+        });
+      } catch (e) {
+        console.error('Incident file upload failed:', e);
+        get().addAlert({
+          message: 'Evidence upload failed. Try a smaller photo or a new picture.',
+          type: 'warning',
+        });
       }
+    } else {
+      const u = incident.imageUrl || '';
+      finalImageUrl = u.startsWith('blob:') ? '' : u;
+    }
+
+    if (file && (!finalImageUrl || finalImageUrl.startsWith('blob:'))) {
+      throw new Error('Could not process the photo (too large or unreadable). Try another picture.');
+    }
+
+    if (!finalImageUrl) {
+      finalImageUrl = stockImage;
     }
 
     const newIncident: FieldIncident = {
@@ -1750,13 +1790,22 @@ export const useStore = create<AppState>()(
     };
 
     try {
-      if (get().isSupabaseConnected && ApiService.hasAuthToken()) {
-        await ApiService.submitIncident(newIncident);
-      } else if (get().isSupabaseConnected && !ApiService.hasAuthToken()) {
-        throw new Error('Session token missing. Please log in again.');
+      if (ApiService.hasAuthToken()) {
+        const { id: _iid, createdAt: _ca, ...payload } = newIncident as FieldIncident & { createdAt?: string };
+        const created = await ApiService.submitIncident(payload);
+        const merged =
+          created && typeof created === 'object'
+            ? { ...newIncident, ...created, id: String((created as any).id || newIncident.id) }
+            : newIncident;
+        set(state => ({ fieldIncidents: [merged, ...state.fieldIncidents] }));
+        get().addAlert({ message: 'Incident saved to the database.', type: 'success' });
+      } else {
+        set(state => ({ fieldIncidents: [newIncident, ...state.fieldIncidents] }));
+        get().addAlert({
+          message: 'Incident saved on this device only. Sign in to store in the database.',
+          type: 'warning',
+        });
       }
-      set(state => ({ fieldIncidents: [newIncident, ...state.fieldIncidents] }));
-      get().addAlert({ message: 'Transmission Successful: Incident reported to Command.', type: 'success' });
     } catch (err: any) {
       console.error('Critical sync failure:', err);
       get().addAlert({ message: `Sync Failure: ${err.message}`, type: 'error' });
@@ -2230,8 +2279,8 @@ export const useStore = create<AppState>()(
   submitWorkReport: async (report, file) => {
     let finalImageUrl = report.imageUrl || '';
 
-    // 1. Handle File Upload if present
-    if (file && get().isSupabaseConnected && ApiService.hasAuthToken()) {
+    // Persist file as data URL so image survives reloads (online and local modes).
+    if (file) {
       try {
         const path = `work-reports/${generateUUID()}-${file.name}`;
         finalImageUrl = await ApiService.uploadFile('work-reports', path, file);
@@ -2239,6 +2288,10 @@ export const useStore = create<AppState>()(
         console.error('File upload failed:', e);
         get().addAlert({ message: 'Evidence upload failed. Proceeding with metadata only.', type: 'warning' });
       }
+    }
+
+    if (file && (!finalImageUrl || finalImageUrl.startsWith('blob:'))) {
+      throw new Error('Could not process the photo (too large or unreadable). Try another picture.');
     }
 
     const now = new Date().toISOString();
@@ -2251,25 +2304,26 @@ export const useStore = create<AppState>()(
       imageUrl: finalImageUrl
     };
 
-    // Require an authenticated token for cloud writes.
-    if (get().isSupabaseConnected && !ApiService.hasAuthToken()) {
-      throw new Error('Session token missing. Please log in again.');
-    }
-
-    // If cloud is connected, save to API first, then update local state.
-    if (get().isSupabaseConnected) {
-      await ApiService.submitWorkReport(newReport);
-      set(state => ({ workReports: [newReport, ...state.workReports] }));
-      get().addAlert({ message: 'Work report synchronized with cloud.', type: 'success' });
+    if (ApiService.hasAuthToken()) {
+      const { id: _cid, timestamp: _ts, ...payload } = newReport as WorkReport & { timestamp?: string };
+      const created = await ApiService.submitWorkReport(payload);
+      const merged =
+        created && typeof created === 'object'
+          ? { ...newReport, ...created, id: String((created as any).id || newReport.id) }
+          : newReport;
+      set(state => ({ workReports: [merged, ...state.workReports] }));
+      get().addAlert({ message: 'Work report saved to the database.', type: 'success' });
       return;
     }
 
-    // Local mode only (API unavailable): keep local history, but be explicit.
     set(state => ({ workReports: [newReport, ...state.workReports] }));
-    get().addAlert({ message: 'Work report saved locally (offline mode).', type: 'warning' });
+    get().addAlert({
+      message: 'Work report saved on this device only. Sign in to persist for admin review.',
+      type: 'warning',
+    });
   },
   approveWorkReport: async (reportId, supervisorId) => {
-    if (get().isSupabaseConnected) {
+    if (ApiService.hasAuthToken()) {
       await ApiService.updateWorkReport(reportId, { status: 'approved', approvedBy: supervisorId });
     }
     set(state => ({
@@ -2280,7 +2334,7 @@ export const useStore = create<AppState>()(
     get().addAlert({ message: 'Report Approved.', type: 'success' });
   },
   rejectWorkReport: async (reportId, supervisorId) => {
-    if (get().isSupabaseConnected) {
+    if (ApiService.hasAuthToken()) {
       await ApiService.updateWorkReport(reportId, { status: 'rejected', approvedBy: supervisorId });
     }
     set(state => ({
@@ -2302,8 +2356,7 @@ export const useStore = create<AppState>()(
     const timestamp = new Date().toISOString();
     let finalImageUrl = photoUrl;
 
-    // Hardening Section: Convert Base64 identity captures to persistent Storage Blobs
-    if (isBase64 && photoUrl && photoUrl.startsWith('data:') && get().isSupabaseConnected) {
+    if (isBase64 && photoUrl && photoUrl.startsWith('data:') && ApiService.hasAuthToken()) {
       try {
         const blob = ApiService.base64ToBlob(photoUrl);
         const path = `attendance/${employeeId || 'anon'}-${Date.now()}.jpg`;
@@ -2314,61 +2367,109 @@ export const useStore = create<AppState>()(
       }
     }
 
-    if (isOut) {
-      const activeRecord = get().attendanceRecords.find(r => r.employeeId === employeeId && !r.checkOut);
-      if (activeRecord) {
-        const updated = {
-          ...activeRecord,
-          checkOut: checkOut || timestamp,
-          type: 'out',
-          photoUrl: finalImageUrl,
-          latitude,
-          longitude,
-          status: matchScore >= 90 ? 'verified' : 'pending',
-          metadata: { ...activeRecord.metadata, ...metadata }
-        } as AttendanceRecord;
-        
-        set(state => ({
-          attendanceRecords: state.attendanceRecords.map(r => r.id === activeRecord.id ? updated : r)
-        }));
+    const latestOpenPunch = () =>
+      [...get().attendanceRecords]
+        .filter((r) => r.employeeId === employeeId && !r.checkOut)
+        .sort(
+          (a, b) =>
+            new Date(b.checkIn || (b as AttendanceRecord).timestamp || 0).getTime() -
+            new Date(a.checkIn || (a as AttendanceRecord).timestamp || 0).getTime()
+        )[0];
 
-        if (get().isSupabaseConnected) {
-          ApiService.updateAttendanceRecord(activeRecord.id, updated).catch((e: any) => {
-            console.error('Attendance Sync Failed [Out]:', e);
-            get().addAlert({ message: 'Offline: Attendance sync deferred.', type: 'warning' });
-          });
-        }
+    if (isOut) {
+      const activeRecord = latestOpenPunch();
+      if (!activeRecord) {
+        get().addAlert({ message: 'No open check-in found to close out.', type: 'warning' });
+        return;
       }
-    } else {
-      const now = new Date().toISOString();
-      const newRecord: AttendanceRecord = {
-        id: generateUUID(),
-        employeeId,
-        locationId,
+      const updated = {
+        ...activeRecord,
+        checkOut: checkOut || timestamp,
+        type: 'out' as const,
         photoUrl: finalImageUrl,
-        type: 'in',
         latitude,
         longitude,
-        timestamp: now,
-        checkIn: now,
         status: matchScore >= 90 ? 'verified' : 'pending',
-        metadata: metadata || {}
-      };
-      
-      set(state => ({ attendanceRecords: [...state.attendanceRecords, newRecord] }));
+        metadata: { ...activeRecord.metadata, ...metadata },
+      } as AttendanceRecord;
 
-      if (get().isSupabaseConnected) {
-        ApiService.submitAttendance(newRecord).catch((e: any) => {
-          console.error('Attendance Sync Failed [In]:', e);
-          get().addAlert({ message: 'Offline: Attendance sync deferred.', type: 'warning' });
+      set((state) => ({
+        attendanceRecords: state.attendanceRecords.map((r) => (r.id === activeRecord.id ? updated : r)),
+      }));
+
+      if (ApiService.hasAuthToken()) {
+        try {
+          const { id: _oid, timestamp: _ts, type: _tp, ...body } = updated as AttendanceRecord & { type?: string };
+          await ApiService.updateAttendanceRecord(activeRecord.id, body);
+        } catch (e: any) {
+          console.error('Attendance Sync Failed [Out]:', e);
+          get().addAlert({
+            message: e?.message || 'Check-out could not be saved to the database.',
+            type: 'error',
+          });
+          return;
+        }
+      } else {
+        get().addAlert({
+          message: 'Not signed in — check-out updated locally only.',
+          type: 'warning',
         });
       }
+
+      get().addAlert({ message: 'Secure Check-out Logged.', type: 'success' });
+      return;
     }
 
-    get().addAlert({ 
-      message: isOut ? 'Secure Check-out Logged.' : 'Secure Check-in Verified.', 
-      type: 'success' 
-    });
+    const now = new Date().toISOString();
+    const newRecord: AttendanceRecord = {
+      id: generateUUID(),
+      employeeId,
+      locationId,
+      photoUrl: finalImageUrl,
+      type: 'in',
+      latitude,
+      longitude,
+      timestamp: now,
+      checkIn: now,
+      status: matchScore >= 90 ? 'verified' : 'pending',
+      metadata: metadata || {},
+    };
+
+    set((state) => ({ attendanceRecords: [...state.attendanceRecords, newRecord] }));
+
+    if (!ApiService.hasAuthToken()) {
+      get().addAlert({
+        message: 'Sign in to save attendance to the database for admin reports.',
+        type: 'warning',
+      });
+      get().addAlert({ message: 'Secure Check-in Verified (this device only).', type: 'success' });
+      return;
+    }
+
+    try {
+      const { id: _nid, timestamp: _nts, type: _ntp, ...body } = newRecord as AttendanceRecord & { type?: string };
+      const created = await ApiService.submitAttendance(body);
+      const merged =
+        created && typeof created === 'object'
+          ? ({
+              ...newRecord,
+              ...created,
+              id: String((created as { id?: string }).id || newRecord.id),
+            } as AttendanceRecord)
+          : newRecord;
+      set((state) => ({
+        attendanceRecords: state.attendanceRecords.map((r) => (r.id === newRecord.id ? merged : r)),
+      }));
+    } catch (e: any) {
+      console.error('Attendance Sync Failed [In]:', e);
+      set((state) => ({
+        attendanceRecords: state.attendanceRecords.filter((r) => r.id !== newRecord.id),
+      }));
+      get().addAlert({ message: e?.message || 'Check-in could not be saved to the database.', type: 'error' });
+      return;
+    }
+
+    get().addAlert({ message: 'Secure Check-in Verified.', type: 'success' });
   },
 
   // Phase 49 Actions
@@ -2638,18 +2739,49 @@ export const useStore = create<AppState>()(
   },
 
   submitTimeOffRequest: async (request) => {
-    const newReq = { ...request, id: generateUUID(), status: 'pending', createdAt: new Date().toISOString() };
-    set(state => ({ timeOffRequests: [newReq as TimeOffRequest, ...state.timeOffRequests] }));
-    if (get().isSupabaseConnected) {
-      await ApiService.submitTimeOffRequest(newReq);
+    const newReq = {
+      ...request,
+      id: generateUUID(),
+      status: 'pending' as const,
+      createdAt: new Date().toISOString(),
+    } as TimeOffRequest;
+
+    set((state) => ({ timeOffRequests: [newReq, ...state.timeOffRequests] }));
+
+    if (!ApiService.hasAuthToken()) {
+      get().addAlert({
+        message: 'Sign in to save leave requests to the database for admin approval.',
+        type: 'warning',
+      });
+      return;
     }
-    get().addAlert({ message: 'Absence request submitted for HR authorization.', type: 'info' });
+
+    try {
+      const { id: _tid, ...body } = newReq;
+      const created = await ApiService.submitTimeOffRequest(body);
+      const merged =
+        created && typeof created === 'object'
+          ? ({ ...newReq, ...created, id: String((created as any).id || newReq.id) } as TimeOffRequest)
+          : newReq;
+      set((state) => ({
+        timeOffRequests: state.timeOffRequests.map((r) => (r.id === newReq.id ? merged : r)),
+      }));
+      get().addAlert({ message: 'Absence request submitted for HR authorization.', type: 'info' });
+    } catch (e: any) {
+      set((state) => ({
+        timeOffRequests: state.timeOffRequests.filter((r) => r.id !== newReq.id),
+      }));
+      get().addAlert({
+        message: e?.message || 'Leave request could not be saved to the server.',
+        type: 'error',
+      });
+    }
   },
   updateTimeOffStatus: async (id, status, adminRemarks) => {
     set(state => ({
       timeOffRequests: state.timeOffRequests.map(r => r.id === id ? { ...r, status, adminRemarks } : r)
     }));
-    if (get().isSupabaseConnected) {
+    if (ApiService.hasAuthToken()) {
       await ApiService.updateTimeOffStatus(id, { status, adminRemarks });
     }
     get().addAlert({ message: `Absence request ${status.toUpperCase()}.`, type: 'success' });
@@ -2675,8 +2807,26 @@ export const useStore = create<AppState>()(
   createManualTimesheet: async (record) => {
     const newRecord = { ...record, id: generateUUID(), createdAt: new Date().toISOString() };
     set(state => ({ attendanceRecords: [newRecord as AttendanceRecord, ...state.attendanceRecords] }));
-    if (get().isSupabaseConnected) {
-      await ApiService.submitAttendance(newRecord);
+    if (ApiService.hasAuthToken()) {
+      try {
+        const { id: _mid, timestamp: _mts, type: _mtp, createdAt: _mca, ...body } = newRecord as AttendanceRecord & {
+          createdAt?: string;
+        };
+        const created = await ApiService.submitAttendance(body);
+        const merged =
+          created && typeof created === 'object'
+            ? ({
+                ...(newRecord as AttendanceRecord),
+                ...created,
+                id: String((created as { id?: string }).id || newRecord.id),
+              } as AttendanceRecord)
+            : newRecord;
+        set((state) => ({
+          attendanceRecords: state.attendanceRecords.map((r) => (r.id === newRecord.id ? merged : r)),
+        }));
+      } catch (e: any) {
+        get().addAlert({ message: e?.message || 'Manual timesheet could not be saved.', type: 'error' });
+      }
     }
     get().addAlert({ message: 'Supervisor-originated manual shift shift entry accepted.', type: 'info' });
   },
@@ -2725,8 +2875,18 @@ export const useStore = create<AppState>()(
       name: 'pyramid-fm-nexus-storage',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => {
-        // We exclude volatile runtime states like connection flags and active toasts
-        const { isSupabaseConnected: _, alerts: __, ...rest } = state;
+        // Do not persist server-canonical lists — rehydrate was overwriting fresh API sync
+        // so admin/other devices never "saw" Mongo data after reload.
+        const {
+          isSupabaseConnected: _c,
+          alerts: _a,
+          workReports: _wr,
+          attendanceRecords: _att,
+          timeOffRequests: _to,
+          fieldIncidents: _fi,
+          supportTickets: _tk,
+          ...rest
+        } = state;
         return rest;
       },
     }

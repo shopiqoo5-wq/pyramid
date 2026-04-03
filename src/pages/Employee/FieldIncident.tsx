@@ -8,6 +8,9 @@ import {
 import { motion } from 'framer-motion';
 import { useTranslation } from '../../hooks/useTranslation';
 
+const DEFAULT_INCIDENT_STOCK_IMAGE =
+  'https://images.unsplash.com/photo-1581094794329-c8112a89af12?auto=format&fit=crop&q=80&w=800';
+
 const FieldIncident: React.FC = () => {
   const { currentUser, employees, submitIncident } = useStore();
   const { t } = useTranslation();
@@ -53,7 +56,11 @@ const FieldIncident: React.FC = () => {
         severity,
         description,
         title: `${severity} ${type} Incident`,
-        imageUrl: imagePreview || 'https://images.unsplash.com/photo-1581094794329-c8112a89af12?auto=format&fit=crop&q=80&w=800'
+        imageUrl: imageFile
+          ? DEFAULT_INCIDENT_STOCK_IMAGE
+          : imagePreview && !imagePreview.startsWith('blob:')
+            ? imagePreview
+            : DEFAULT_INCIDENT_STOCK_IMAGE
       }, imageFile || undefined);
 
       setSubmitted(true);

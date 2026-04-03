@@ -1,5 +1,26 @@
 const BASE_URL = '/api';
 
+/** Map _id → id so admin UI and PUT /data/*?id= use stable string IDs */
+function normalizeMongoDoc(doc: unknown): unknown {
+  if (doc == null || typeof doc !== 'object' || Array.isArray(doc)) return doc;
+  const o = doc as Record<string, unknown>;
+  const out = { ...o };
+  const rawId = out.id != null ? out.id : out._id;
+  if (rawId != null && String(rawId) !== '') {
+    out.id = String(rawId);
+  }
+  delete out._id;
+  delete out.__v;
+  return out;
+}
+
+function normalizeApiPayload(data: unknown): unknown {
+  if (Array.isArray(data)) return data.map((row) => normalizeMongoDoc(row) as object);
+  return normalizeMongoDoc(data);
+}
+
+const VERCEL_JSON_BODY_SAFE_CHARS = 2_400_000;
+
 const fetchApi = async (path: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('pyramid_auth_token');
   const headers = {
@@ -8,12 +29,20 @@ const fetchApi = async (path: string, options: RequestInit = {}) => {
     ...(options.headers || {}),
   };
 
+  const url = `${BASE_URL}${path}`;
+  const runFetch = () => fetch(url, { ...options, headers });
+
   let response: Response;
   try {
-    response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Network error';
-    throw new Error(`${msg} (could not reach ${BASE_URL}${path})`);
+    response = await runFetch();
+  } catch (first: unknown) {
+    await new Promise((r) => setTimeout(r, 450));
+    try {
+      response = await runFetch();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      throw new Error(`${msg} (could not reach ${url})`);
+    }
   }
 
   if (!response.ok) {
@@ -53,7 +82,7 @@ export const ApiService: any = {
       body: JSON.stringify({ email, password: pass }),
     });
     localStorage.setItem('pyramid_auth_token', data.token);
-    return data.user;
+    return normalizeMongoDoc(data.user) as typeof data.user;
   },
 
   async signOut() {
@@ -61,11 +90,17 @@ export const ApiService: any = {
   },
 
   async getCurrentUser() {
-     try {
-        return await fetchApi('/auth/me');
-     } catch {
-        return null;
-     }
+    const hadToken = !!localStorage.getItem('pyramid_auth_token');
+    try {
+      const user = await fetchApi('/auth/me');
+      if (hadToken && user == null) {
+        localStorage.removeItem('pyramid_auth_token');
+      }
+      if (user == null) return null;
+      return normalizeMongoDoc(user) as typeof user;
+    } catch {
+      return null;
+    }
   },
 
   async checkConnection() {
@@ -80,21 +115,30 @@ export const ApiService: any = {
   // --- GENERIC ENGINE ---
   async fetchData(table: string, filters: Record<string, string> = {}) {
     const query = new URLSearchParams(filters).toString();
-    return fetchApi(`/data/${table}${query ? `?${query}` : ''}`);
+    const raw = await fetchApi(`/data/${table}${query ? `?${query}` : ''}`);
+    return normalizeApiPayload(raw);
   },
 
   async submitData(table: string, body: any) {
-    return fetchApi(`/data/${table}`, {
+    const serialized = JSON.stringify(body);
+    if (serialized.length > VERCEL_JSON_BODY_SAFE_CHARS) {
+      throw new Error(
+        'Request too large for the server (try a smaller photo or shorter description).'
+      );
+    }
+    const raw = await fetchApi(`/data/${table}`, {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: serialized,
     });
+    return normalizeApiPayload(raw);
   },
 
   async updateData(table: string, id: string, body: any) {
-    return fetchApi(`/data/${table}?id=${id}`, {
+    const raw = await fetchApi(`/data/${table}?id=${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     });
+    return normalizeApiPayload(raw);
   },
 
   async deleteData(table: string, id: string) {
@@ -201,6 +245,65 @@ export const ApiService: any = {
   toggleWebhookActive(id: string, a: boolean) { return this.updateData('webhooks', id, { active: a }); },
 
   // --- UTILS ---
+  /** Downscale JPEG data URL so /api/data POST bodies stay under Vercel limits (~4MB) and mobile uploads succeed. */
+  async imageToCompressedDataUrl(
+    file: Blob,
+    maxEdge = 1920,
+    jpegQuality = 0.82
+  ): Promise<string> {
+    if (typeof createImageBitmap === 'function') {
+      try {
+        const bitmap = await createImageBitmap(file);
+        try {
+          let w = bitmap.width;
+          let h = bitmap.height;
+          const scale = Math.min(1, maxEdge / Math.max(w, h, 1));
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('canvas');
+          ctx.drawImage(bitmap, 0, 0, w, h);
+          return canvas.toDataURL('image/jpeg', jpegQuality);
+        } finally {
+          bitmap.close();
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        try {
+          let w = img.naturalWidth;
+          let h = img.naturalHeight;
+          const scale = Math.min(1, maxEdge / Math.max(w, h, 1));
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('canvas');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', jpegQuality));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Image decode failed'));
+      };
+      img.src = url;
+    });
+  },
+
   base64ToBlob(base64: string) {
     const parts = base64.split(';base64,');
     const contentType = parts[0].split(':')[1];
@@ -212,15 +315,59 @@ export const ApiService: any = {
     return new Blob([uInt8Array], { type: contentType });
   },
 
-  async uploadFile(_bucket: string, _path: string, body: File | Blob) {
-    if (body instanceof Blob) {
-       return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.readAsDataURL(body);
-       });
+  async uploadFile(
+    _bucket: string,
+    _path: string,
+    body: File | Blob,
+    opts?: { maxEdge?: number; jpegQuality?: number }
+  ) {
+    if (!(body instanceof Blob)) return '';
+    const maxEdge = opts?.maxEdge ?? 1920;
+    const jpegQuality = opts?.jpegQuality ?? 0.82;
+    const mime = body instanceof File ? body.type : body.type || '';
+    const looksImage =
+      mime.startsWith('image/') ||
+      (body instanceof File && /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(body.name));
+
+    const ensureUnderLimit = (dataUrl: string) => {
+      if (dataUrl.length > VERCEL_JSON_BODY_SAFE_CHARS) {
+        throw new Error('Compressed image still too large for upload');
+      }
+      return dataUrl;
+    };
+
+    if (looksImage) {
+      try {
+        let dataUrl = await ApiService.imageToCompressedDataUrl(body, maxEdge, jpegQuality);
+        if (dataUrl.length > VERCEL_JSON_BODY_SAFE_CHARS) {
+          dataUrl = await ApiService.imageToCompressedDataUrl(
+            body,
+            Math.min(1280, maxEdge),
+            Math.min(0.72, jpegQuality)
+          );
+        }
+        return ensureUnderLimit(dataUrl);
+      } catch {
+        /* fall through to raw read */
+      }
     }
-    return '';
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file for upload'));
+      reader.onloadend = () => {
+        const result = reader.result;
+        if (typeof result !== 'string' || !result.startsWith('data:')) {
+          reject(new Error('Invalid upload payload generated'));
+          return;
+        }
+        try {
+          resolve(ensureUnderLimit(result));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      reader.readAsDataURL(body);
+    });
   },
 
   async initApi() {

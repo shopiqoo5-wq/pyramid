@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 import { Card, Badge, Button } from '../../components/ui';
@@ -7,6 +7,8 @@ import {
   LuImage as LuImageIcon, LuPlus, LuMapPin, LuInfo, LuShieldCheck
 } from 'react-icons/lu';
 import './Employee.css';
+
+const WORK_REPORT_EVIDENCE_INPUT_ID = 'work-report-evidence-file';
 
 const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   const R = 6371e3; // Earth radius in meters
@@ -26,7 +28,9 @@ const WorkReports: React.FC = () => {
   const { currentUser, workReports, employees, submitWorkReport, locations, isSupabaseConnected } = useStore();
 
   const employee = employees.find(e => e.userId === currentUser?.id);
-  const site = locations.find(l => l.id === employee?.locationId);
+  const effectiveEmployeeId = employee?.id || currentUser?.id || '';
+  const effectiveLocationId = employee?.locationId || currentUser?.locationId || locations[0]?.id || '';
+  const site = locations.find(l => l.id === effectiveLocationId);
   
   const [showForm, setShowForm] = useState(false);
   const [reportText, setReportText] = useState('');
@@ -35,10 +39,56 @@ const WorkReports: React.FC = () => {
   const [locationVerified, setLocationVerified] = useState(false);
   const [distError, setDistError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageObjectUrlRef = useRef<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+
+  const revokePreviewUrl = () => {
+    if (imageObjectUrlRef.current) {
+      URL.revokeObjectURL(imageObjectUrlRef.current);
+      imageObjectUrlRef.current = null;
+    }
+  };
+
+  const setPhotoFromFile = (file: File) => {
+    revokePreviewUrl();
+    const url = URL.createObjectURL(file);
+    imageObjectUrlRef.current = url;
+    setImageFile(file);
+    setImagePreview(url);
+  };
+
+  /** Opening the sheet fresh avoids stale photos; no-coords sites skip the Verify tap. */
+  const openReportForm = useCallback(() => {
+    revokePreviewUrl();
+    setImageFile(null);
+    setImagePreview(null);
+    setReportText('');
+    setDistError(null);
+    setLocationVerified(false);
+    setIsVerifying(false);
+    setShowForm(true);
+  }, []);
+
+  const closeReportForm = useCallback(() => {
+    revokePreviewUrl();
+    setImageFile(null);
+    setImagePreview(null);
+    setShowForm(false);
+  }, []);
+
+  useEffect(() => {
+    if (!showForm) return;
+    const missingCoords = !site?.latitude || !site?.longitude;
+    if (missingCoords) {
+      setLocationVerified(true);
+      setDistError('Site coordinates not configured. Verification bypassed for operational continuity.');
+    }
+  }, [showForm, site?.latitude, site?.longitude]);
+
+  useEffect(() => () => revokePreviewUrl(), []);
 
   const verifyGeofence = () => {
     if (!site?.latitude || !site?.longitude) {
@@ -80,27 +130,57 @@ const WorkReports: React.FC = () => {
   };
 
   const myReports = workReports
-    .filter(r => r.employeeId === employee?.id)
+    .filter(r => r.employeeId === effectiveEmployeeId || r.userId === currentUser?.id)
     .filter(r => filter === 'all' || r.status === filter)
     .sort((a, b) => new Date(b.createdAt || (b as any).timestamp || '').getTime() - new Date(a.createdAt || (a as any).timestamp || '').getTime());
 
   const handleReportSubmit = async () => {
-    if (!employee || !reportText) return;
+    if (!currentUser) {
+      setDistError('Authentication required. Please sign in again.');
+      return;
+    }
+    if (!reportText?.trim()) {
+      setDistError('Remarks are required before submitting.');
+      return;
+    }
+    if (!effectiveEmployeeId) {
+      setDistError('Unable to resolve your staff id. Sign in again or contact admin.');
+      return;
+    }
+    if (!imagePreview) {
+      setDistError('Add a photo before submitting.');
+      return;
+    }
+
+    let fileToSend = imageFile;
+    if (!fileToSend && imagePreview.startsWith('blob:')) {
+      try {
+        const res = await fetch(imagePreview);
+        const blob = await res.blob();
+        fileToSend = new File([blob], 'evidence.jpg', { type: blob.type || 'image/jpeg' });
+      } catch {
+        setDistError('Could not read the photo. Capture it again.');
+        return;
+      }
+    }
+
     setIsCapturing(true);
 
     try {
       await submitWorkReport({
-        employeeId: employee.id,
-        userId: currentUser!.id,
-        locationId: employee.locationId,
-        remarks: reportText,
+        employeeId: effectiveEmployeeId,
+        userId: currentUser.id,
+        locationId: effectiveLocationId || undefined,
+        remarks: reportText.trim(),
         imageUrl: imagePreview || 'https://images.unsplash.com/photo-1584820927498-cafe8c160826?auto=format&fit=crop&q=80&w=800'
-      }, imageFile || undefined);
+      }, fileToSend || undefined);
 
       // Reset form
+      revokePreviewUrl();
       setShowForm(false);
       setReportText('');
       setImagePreview(null);
+      setImageFile(null);
       setDistError(null);
       setLocationVerified(false);
       
@@ -118,6 +198,19 @@ const WorkReports: React.FC = () => {
     return new Date(dateString).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
   };
 
+  const needsSiteVerify = !!(site?.latitude && site?.longitude);
+  const submitDisabled =
+    isCapturing || !reportText?.trim() || !imagePreview || !locationVerified;
+  const submitHint = !reportText?.trim()
+    ? 'Add operational remarks to continue.'
+    : !imagePreview
+      ? 'Add a photo (camera or library) to continue.'
+      : !locationVerified
+        ? needsSiteVerify
+          ? 'Tap Verify to confirm you are at the site.'
+          : 'Waiting for location check…'
+        : null;
+
   return (
     <div className="employee-main animate-fade-in" style={{ paddingBottom: '7rem' }}>
       <header style={{ padding: '1.5rem', marginTop: '1rem' }}>
@@ -130,8 +223,9 @@ const WorkReports: React.FC = () => {
 
         <motion.div whileTap={{ scale: 0.98 }} style={{ marginTop: '1.5rem' }}>
           <Button 
+            type="button"
             variant="primary" 
-            onClick={() => setShowForm(true)}
+            onClick={openReportForm}
             style={{ width: '100%', height: '60px', borderRadius: '20px', fontSize: '1.1rem', fontWeight: 900, boxShadow: '0 15px 30px var(--primary-glow)' }}
           >
             <LuPlus size={22} style={{ marginRight: '8px' }} /> NEW REPORT
@@ -260,57 +354,102 @@ const WorkReports: React.FC = () => {
                 <Badge variant="primary" style={{ marginBottom: '0.5rem' }}>EVIDENCE CAPTURE</Badge>
                 <h2 style={{ fontSize: '1.8rem', fontWeight: 950, letterSpacing: '-0.04em', color: 'var(--text-main)' }}>Submit Report</h2>
               </div>
-              <button onClick={() => setShowForm(false)} style={{ background: 'var(--surface-hover)', border: 'none', color: 'var(--text-muted)', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button type="button" onClick={closeReportForm} style={{ background: 'var(--surface-hover)', border: 'none', color: 'var(--text-muted)', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <LuX size={20} />
               </button>
             </header>
             
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2rem', overflowY: 'auto', padding: '0.5rem 0.5rem calc(130px + env(safe-area-inset-bottom, 20px)) 0.5rem' }} className="hide-scrollbar">
               <div className="input-group" style={{ margin: 0 }}>
-                <label className="input-label" style={{ marginBottom: '1rem' }}>Photographic Evidence (Required)</label>
-                <input 
-                  type="file" accept="image/*" capture="environment"
-                  ref={fileInputRef}
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      const file = e.target.files[0];
-                      setImageFile(file);
-                      setImagePreview(URL.createObjectURL(file));
-                    }
-                  }}
-                  style={{ display: 'none' }} 
-                />
-                <motion.div 
+                <span className="input-label" style={{ marginBottom: '1rem', display: 'block' }}>Photographic Evidence (Required)</span>
+                <motion.label
+                  htmlFor={WORK_REPORT_EVIDENCE_INPUT_ID}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{ 
-                    aspectRatio: '1', 
-                    borderRadius: '32px', 
-                    background: 'rgba(var(--primary-rgb), 0.05)', 
-                    border: '2px dashed var(--border)', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    gap: '1rem', 
+                  style={{
+                    aspectRatio: '1',
+                    borderRadius: '32px',
+                    background: 'rgba(var(--primary-rgb), 0.05)',
+                    border: '2px dashed var(--border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '1rem',
                     color: 'var(--text-muted)',
                     cursor: 'pointer',
                     overflow: 'hidden',
                     position: 'relative',
-                    boxShadow: 'inset 0 4px 24px rgba(0,0,0,0.06)'
+                    boxShadow: 'inset 0 4px 24px rgba(0,0,0,0.06)',
                   }}
                 >
+                  <input
+                    id={WORK_REPORT_EVIDENCE_INPUT_ID}
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) setPhotoFromFile(file);
+                      e.target.value = '';
+                    }}
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 0,
+                      cursor: 'pointer',
+                      fontSize: 0,
+                      zIndex: 2,
+                    }}
+                  />
                   {imagePreview ? (
-                    <img src={imagePreview} alt="Evidence" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img
+                      src={imagePreview}
+                      alt="Evidence"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        pointerEvents: 'none',
+                        position: 'absolute',
+                        inset: 0,
+                      }}
+                    />
                   ) : (
                     <>
-                      <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 30px var(--primary-glow)' }}>
+                      <div
+                        style={{
+                          width: '80px',
+                          height: '80px',
+                          borderRadius: '50%',
+                          background: 'var(--primary-light)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 8px 30px var(--primary-glow)',
+                          pointerEvents: 'none',
+                        }}
+                      >
                         <LuCamera size={36} />
                       </div>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Open Tactical Camera</span>
+                      <span
+                        style={{
+                          fontSize: '0.9rem',
+                          fontWeight: 900,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.1em',
+                          textAlign: 'center',
+                          padding: '0 1rem',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        Add photo — camera or library
+                      </span>
                     </>
                   )}
-                </motion.div>
+                </motion.label>
                 
                 {/* Geofence Verification Block */}
                 <div style={{ marginTop: '1.5rem', padding: '1.5rem', borderRadius: '24px', background: locationVerified ? 'rgba(16, 185, 129, 0.05)' : 'var(--surface-hover)', border: locationVerified ? '1px solid var(--success)' : '1px solid var(--border)' }}>
@@ -360,12 +499,18 @@ const WorkReports: React.FC = () => {
               </div>
             </div>
 
-            <div style={{ padding: '1.25rem 0 calc(1.25rem + env(safe-area-inset-bottom, 20px))', background: 'var(--bg-color)', borderTop: '1px solid var(--border)', marginTop: 'auto' }}>
+            <div style={{ padding: '1.25rem 0 calc(1.25rem + env(safe-area-inset-bottom, 24px))', background: 'var(--bg-color)', borderTop: '1px solid var(--border)', marginTop: 'auto', position: 'sticky', bottom: 0, zIndex: 50, touchAction: 'manipulation' }}>
+              {submitHint && (
+                <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'center' }}>
+                  {submitHint}
+                </p>
+              )}
                <Button 
-                onClick={handleReportSubmit}
-                disabled={isCapturing || !reportText || !imagePreview || !locationVerified}
+                type="button"
+                onClick={() => void handleReportSubmit()}
+                disabled={submitDisabled}
                 variant="primary"
-                style={{ width: '100%', height: '64px', borderRadius: '24px', fontSize: '1.1rem', fontWeight: 950, boxShadow: '0 20px 40px var(--primary-glow)' }}
+                style={{ width: '100%', minHeight: '64px', borderRadius: '24px', fontSize: '1.1rem', fontWeight: 950, boxShadow: '0 20px 40px var(--primary-glow)', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               >
                 {isCapturing ? (
                   <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
