@@ -2231,7 +2231,7 @@ export const useStore = create<AppState>()(
     let finalImageUrl = report.imageUrl || '';
 
     // 1. Handle File Upload if present
-    if (file && import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+    if (file && get().isSupabaseConnected && ApiService.hasAuthToken()) {
       try {
         const path = `work-reports/${generateUUID()}-${file.name}`;
         finalImageUrl = await ApiService.uploadFile('work-reports', path, file);
@@ -2251,20 +2251,22 @@ export const useStore = create<AppState>()(
       imageUrl: finalImageUrl
     };
 
-    // 2. Optimistic Local Update
-    set(state => ({ workReports: [newReport, ...state.workReports] }));
-    get().addAlert({ message: 'Work report logged locally.', type: 'info' });
-
-    // 3. Background Sync
-    if (get().isSupabaseConnected) {
-      try {
-        await ApiService.submitWorkReport(newReport);
-        get().addAlert({ message: 'Work report synchronized with cloud.', type: 'success' });
-      } catch (e) {
-        console.error('Supabase Sync Failed [WorkReport]:', e);
-        get().addAlert({ message: 'Sync failed. Data stored in local cache.', type: 'error' });
-      }
+    // Require an authenticated token for cloud writes.
+    if (get().isSupabaseConnected && !ApiService.hasAuthToken()) {
+      throw new Error('Session token missing. Please log in again.');
     }
+
+    // If cloud is connected, save to API first, then update local state.
+    if (get().isSupabaseConnected) {
+      await ApiService.submitWorkReport(newReport);
+      set(state => ({ workReports: [newReport, ...state.workReports] }));
+      get().addAlert({ message: 'Work report synchronized with cloud.', type: 'success' });
+      return;
+    }
+
+    // Local mode only (API unavailable): keep local history, but be explicit.
+    set(state => ({ workReports: [newReport, ...state.workReports] }));
+    get().addAlert({ message: 'Work report saved locally (offline mode).', type: 'warning' });
   },
   approveWorkReport: async (reportId, supervisorId) => {
     if (get().isSupabaseConnected) {
