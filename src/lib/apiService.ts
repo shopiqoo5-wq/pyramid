@@ -43,6 +43,10 @@ const fetchApi = async (path: string, options: RequestInit = {}) => {
 
 export const ApiService: any = {
   // --- AUTH & CORE ---
+  hasAuthToken() {
+    return !!localStorage.getItem('pyramid_auth_token');
+  },
+
   async signIn(email: string, pass: string) {
     const data = await fetchApi('/auth/login', {
       method: 'POST',

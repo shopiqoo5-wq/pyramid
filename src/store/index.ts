@@ -323,19 +323,17 @@ export const useStore = create<AppState>()(
   isSupabaseConnected: false,
   currentUser: null,
   login: async (companyIdentifier, userIdentifier, password) => {
-    // 1. Try MongoDB Auth if connected
-    if (get().isSupabaseConnected) {
-      try {
-        const user = await ApiService.signIn(userIdentifier, password);
-        if (user) {
-          set({ currentUser: user });
-          get().addAlert({ message: `Access Authorized: ${user.name}`, type: 'success' });
-          await get().initSupabase();
-          return true;
-        }
-      } catch (err: any) {
-        console.warn('API Auth failed, falling back to mock:', err.message);
+    // 1. Always try API auth first so JWT token is available for protected routes.
+    try {
+      const user = await ApiService.signIn(userIdentifier, password);
+      if (user) {
+        set({ currentUser: user, isSupabaseConnected: true });
+        get().addAlert({ message: `Access Authorized: ${user.name}`, type: 'success' });
+        await get().initSupabase();
+        return true;
       }
+    } catch (err: any) {
+      console.warn('API Auth failed, falling back to local mode:', err.message);
     }
 
     // 2. Fallback to mock logic
@@ -356,11 +354,11 @@ export const useStore = create<AppState>()(
     });
     if (user && await verifyPassword(password, user.password || '')) {
       const sanitized = sanitizeUser(user);
-      set({ currentUser: sanitized as User });
+      // Local fallback mode: keep user signed in locally, disable protected API writes.
+      await ApiService.signOut();
+      set({ currentUser: sanitized as User, isSupabaseConnected: false });
       get().addAlert({ message: `Access Authorized: ${user.name}${isSystemAdmin ? ' (System)' : ''}`, type: 'success' });
-      
-      // Hydrate even for mock login to sync whatever is available
-      await get().initSupabase();
+      get().addAlert({ message: 'Running in local mode. Cloud save is disabled until API login succeeds.', type: 'warning' });
       return true;
     }
     return false;
@@ -1752,8 +1750,10 @@ export const useStore = create<AppState>()(
     };
 
     try {
-      if (get().isSupabaseConnected) {
+      if (get().isSupabaseConnected && ApiService.hasAuthToken()) {
         await ApiService.submitIncident(newIncident);
+      } else if (get().isSupabaseConnected && !ApiService.hasAuthToken()) {
+        throw new Error('Session token missing. Please log in again.');
       }
       set(state => ({ fieldIncidents: [newIncident, ...state.fieldIncidents] }));
       get().addAlert({ message: 'Transmission Successful: Incident reported to Command.', type: 'success' });
