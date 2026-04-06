@@ -402,13 +402,13 @@ export const useStore = create<AppState>()(
       try {
         sessionUser = await ApiService.getCurrentUser();
         if (sessionUser) {
+          set({ currentUser: sessionUser, isSupabaseConnected: true });
+          console.log(`👤 Session restored: ${sessionUser.name}`);
+        } else {
+          console.log('ℹ️ No active session — synchronization deferred.');
           set({ currentUser: null, isSupabaseConnected: false }); // Clear stale auth
-          return;
+          return; // Stop here: avoids 401s on protected data routes
         }
-        
-        // Only set connectivity true after session is confirmed
-        set({ isSupabaseConnected: true });
-        console.log(`👤 Session restored: ${sessionUser.name}`);
       } catch (err: any) {
         console.warn('Session restore failed:', err.message || err);
         set({ currentUser: null, isSupabaseConnected: false }); // Block unauthorized data flow
