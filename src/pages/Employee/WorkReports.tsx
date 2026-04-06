@@ -150,7 +150,7 @@ const WorkReports: React.FC = () => {
       return;
     }
     if (!imagePreview) {
-      setDistError('Add a photo before submitting.');
+      useStore.getState().addAlert({ message: 'Add a photo before submitting.', type: 'warning' });
       return;
     }
 
@@ -160,8 +160,9 @@ const WorkReports: React.FC = () => {
         const res = await fetch(imagePreview);
         const blob = await res.blob();
         fileToSend = new File([blob], 'evidence.jpg', { type: blob.type || 'image/jpeg' });
-      } catch {
-        setDistError('Could not read the photo. Capture it again.');
+      } catch (err: any) {
+        console.error('File read error:', err);
+        useStore.getState().addAlert({ message: 'Could not read the photo. Capture it again.', type: 'error' });
         return;
       }
     }
@@ -486,8 +487,13 @@ const WorkReports: React.FC = () => {
                         </Button>
                       )}
                    </div>
+                   {!site?.latitude && (
+                     <div style={{ marginTop: '1rem', color: '#fff', fontSize: '0.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'var(--primary)', borderRadius: '16px', boxShadow: '0 8px 20px var(--primary-glow)', opacity: 0.9 }}>
+                        <LuInfo size={18} /> Site coordinates not configured. Verification bypassed.
+                     </div>
+                   )}
                    {distError && (
-                     <div style={{ marginTop: '1rem', color: '#fff', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'var(--primary)', borderRadius: '16px', boxShadow: '0 8px 20px var(--primary-glow)' }}>
+                     <div style={{ marginTop: '1rem', color: '#fff', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'var(--danger)', borderRadius: '16px', boxShadow: '0 8px 20px rgba(239, 68, 68, 0.4)' }}>
                         <LuInfo size={18} /> {distError}
                      </div>
                    )}
