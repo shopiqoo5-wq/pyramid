@@ -112,7 +112,9 @@ const WorkReports: React.FC = () => {
              setDistError(`Testing Bypass: Geofence mismatch ignored (${Math.round(distance)}m).`);
              setLocationVerified(true);
           } else {
-             setDistError(`Geofence rejection: You are ${Math.round(distance)}m away from ${site.name}.`);
+             const errorMsg = `Geofence rejection: You are ${Math.round(distance)}m away from ${site.name}.`;
+             setDistError(errorMsg);
+             useStore.getState().addAlert({ message: errorMsg, type: 'error' });
              setLocationVerified(false);
           }
         } else {
@@ -184,11 +186,16 @@ const WorkReports: React.FC = () => {
       setDistError(null);
       setLocationVerified(false);
       
-      // Success feedback
-      alert("Operations Report Transmitted Successfully.");
+      // Success feedback via store alert
+      useStore.getState().addAlert({ 
+        message: "Operations Report Transmitted Successfully.", 
+        type: 'success' 
+      });
     } catch (error: any) {
       console.error('Submission failed:', error);
-      setDistError(error.message || 'Transmission protocols disrupted. Retry required.');
+      const msg = error.message || 'Transmission protocols disrupted. Retry required.';
+      setDistError(msg);
+      useStore.getState().addAlert({ message: msg, type: 'error' });
     } finally {
       setIsCapturing(false);
     }
@@ -501,7 +508,7 @@ const WorkReports: React.FC = () => {
 
             <div style={{ padding: '1.25rem 0 calc(1.25rem + env(safe-area-inset-bottom, 24px))', background: 'var(--bg-color)', borderTop: '1px solid var(--border)', marginTop: 'auto', position: 'sticky', bottom: 0, zIndex: 50, touchAction: 'manipulation' }}>
               {submitHint && (
-                <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'center' }}>
+                <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', fontWeight: 800, color: 'var(--primary)', textAlign: 'center', background: 'var(--primary-glow)', padding: '0.5rem', borderRadius: '12px' }}>
                   {submitHint}
                 </p>
               )}

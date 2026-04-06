@@ -399,19 +399,19 @@ export const useStore = create<AppState>()(
       set({ isSupabaseConnected: true });
       console.log('⚡ Backend reachable');
 
+      let sessionUser = null;
       try {
-        const sessionUser = await ApiService.getCurrentUser();
+        sessionUser = await ApiService.getCurrentUser();
         if (sessionUser) {
           set({ currentUser: sessionUser });
           console.log(`👤 Session restored: ${sessionUser.name}`);
+        } else {
+          console.log('ℹ️ No active session — synchronization deferred.');
+          return; // Stop here: avoids 401s on protected data routes
         }
-      } catch {
-        console.warn('Session restore skipped.');
-      }
-
-      if (!ApiService.hasAuthToken()) {
-        console.log('ℹ️ Not signed in — skipping cloud data fetch (avoids 401 on protected routes).');
-        return;
+      } catch (err: any) {
+        console.warn('Session restore failed:', err.message || err);
+        return; // Stop here: avoids 401s
       }
 
       addAlert({ message: 'Backend connected. Synchronization online.', type: 'success' });
