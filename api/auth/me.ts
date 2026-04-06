@@ -21,6 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { password: _pw, ...userWithoutPassword } = user.toObject();
     return res.status(200).json(userWithoutPassword);
   } catch (e: any) {
+    const status = e.status || 500;
     const msg = e?.message || 'Unauthorized';
     const lower = String(msg).toLowerCase();
     const isAuthError =
@@ -28,8 +29,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       lower.includes('jwt') ||
       lower.includes('unauthorized') ||
       lower.includes('authorization');
+    
+    // Config errors (missing secret) should crash with 500 so they are visible.
+    // Real auth errors (bad token) should return 200/null to stay silent in background.
+    if (status === 500) return res.status(500).json({ message: msg });
     if (isAuthError) return res.status(200).json(null);
-    return res.status(500).json({ message: msg });
+    return res.status(status).json({ message: msg });
   }
 }
 

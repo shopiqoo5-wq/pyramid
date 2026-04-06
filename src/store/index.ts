@@ -396,21 +396,22 @@ export const useStore = create<AppState>()(
         return;
       }
 
-      set({ isSupabaseConnected: true });
       console.log('⚡ Backend reachable');
 
       let sessionUser = null;
       try {
         sessionUser = await ApiService.getCurrentUser();
         if (sessionUser) {
-          set({ currentUser: sessionUser });
-          console.log(`👤 Session restored: ${sessionUser.name}`);
-        } else {
-          console.log('ℹ️ No active session — synchronization deferred.');
-          return; // Stop here: avoids 401s on protected data routes
+          set({ currentUser: null, isSupabaseConnected: false }); // Clear stale auth
+          return;
         }
+        
+        // Only set connectivity true after session is confirmed
+        set({ isSupabaseConnected: true });
+        console.log(`👤 Session restored: ${sessionUser.name}`);
       } catch (err: any) {
         console.warn('Session restore failed:', err.message || err);
+        set({ currentUser: null, isSupabaseConnected: false }); // Block unauthorized data flow
         return; // Stop here: avoids 401s
       }
 

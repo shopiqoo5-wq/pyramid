@@ -135,7 +135,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       lower.includes('jwt') ||
       lower.includes('unauthorized') ||
       lower.includes('authorization');
-    const status = isAuth ? 401 : 500;
+    const status = error.status || (isAuth ? 401 : 500);
     res.status(status).json({ message: msg });
   }
 }

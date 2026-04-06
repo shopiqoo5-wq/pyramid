@@ -14,7 +14,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (!JWT_SECRET) {
-      return res.status(500).json({ message: 'JWT_SECRET is not set' });
+      console.error('❌ Missing JWT_SECRET env var');
+      return res.status(500).json({ message: 'JWT_SECRET is missing in server environment' });
     }
     await connectToDatabase();
     const { email, password } = req.body;

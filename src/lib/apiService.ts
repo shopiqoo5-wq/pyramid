@@ -23,6 +23,13 @@ const VERCEL_JSON_BODY_SAFE_CHARS = 2_400_000;
 
 const fetchApi = async (path: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('pyramid_auth_token');
+  
+  // Guard: Don't call protected data routes without a token to avoid 401 spam.
+  if (!token && (path.startsWith('/data/') || path === '/auth/me')) {
+    if (path === '/auth/me') return null;
+    throw new Error('Unauthorized: No session token found');
+  }
+
   const headers = {
     'Content-Type': 'application/json',
     ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -36,6 +43,7 @@ const fetchApi = async (path: string, options: RequestInit = {}) => {
   try {
     response = await runFetch();
   } catch (first: unknown) {
+    // Retry on network error
     await new Promise((r) => setTimeout(r, 450));
     try {
       response = await runFetch();
@@ -46,6 +54,9 @@ const fetchApi = async (path: string, options: RequestInit = {}) => {
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('pyramid_auth_token');
+    }
     const text = await response.text();
     let detail = '';
     try {
