@@ -403,114 +403,100 @@ const WorkReports: React.FC = () => {
               }}
               className="hide-scrollbar"
             >
-              <div className="input-group" style={{ margin: 0 }}>
+              <div className="input-group" style={{ margin: 0, flexShrink: 0 }}>
                 <span className="input-label" style={{ marginBottom: '1rem', display: 'block' }}>Photographic Evidence (Required)</span>
-                <label
-                  htmlFor={WORK_REPORT_EVIDENCE_INPUT_ID}
-                  style={{
-                    aspectRatio: '1',
-                    borderRadius: '32px',
-                    background: 'rgba(var(--primary-rgb), 0.05)',
-                    border: '2px dashed var(--border)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '1rem',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    overflow: 'hidden',
-                    position: 'relative',
-                    boxShadow: 'inset 0 4px 24px rgba(0,0,0,0.06)',
-                    WebkitTapHighlightColor: 'transparent',
-                    touchAction: 'manipulation',
-                  }}
-                >
-                  <input
-                    id={WORK_REPORT_EVIDENCE_INPUT_ID}
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) setPhotoFromFile(file);
-                      e.target.value = '';
-                    }}
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <label
+                    htmlFor={WORK_REPORT_EVIDENCE_INPUT_ID}
                     style={{
-                      position: 'absolute',
-                      inset: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       width: '100%',
-                      height: '100%',
-                      opacity: 0.01,
+                      minHeight: '280px',
+                      aspectRatio: '4/3',
+                      borderRadius: '24px',
+                      background: 'var(--surface-sub)',
+                      border: '2px dashed var(--border-strong)',
+                      color: 'var(--text-muted)',
                       cursor: 'pointer',
-                      fontSize: '16px',
-                      zIndex: 2,
-                      WebkitAppearance: 'none',
+                      overflow: 'hidden',
+                      position: 'relative',
+                      boxShadow: 'inset 0 4px 12px rgba(0,0,0,0.05)',
+                      transition: 'all 0.3s ease'
                     }}
-                  />
-                  {imagePreview ? (
-                    <img
-                      src={imagePreview}
-                      alt="Evidence"
+                  >
+                    <input
+                      id={WORK_REPORT_EVIDENCE_INPUT_ID}
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setPhotoFromFile(file);
+                        e.target.value = '';
+                      }}
                       style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        pointerEvents: 'none',
                         position: 'absolute',
                         inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        opacity: 0,
+                        cursor: 'pointer',
+                        zIndex: 10
                       }}
                     />
-                  ) : (
-                    <>
-                      <div
+                    {imagePreview ? (
+                      <img
+                        src={imagePreview}
+                        alt="Evidence"
                         style={{
-                          width: '80px',
-                          height: '80px',
-                          borderRadius: '50%',
-                          background: 'var(--primary-light)',
-                          color: 'var(--primary)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxShadow: '0 8px 30px var(--primary-glow)',
-                          pointerEvents: 'none',
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover'
                         }}
-                      >
-                        <LuCamera size={36} />
+                      />
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                        <div
+                          style={{
+                            width: '64px',
+                            height: '64px',
+                            borderRadius: '20px',
+                            background: 'var(--primary-glow)',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 8px 20px var(--primary-glow)'
+                          }}
+                        >
+                          <LuCamera size={32} />
+                        </div>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Tap to Capture Evidence
+                        </span>
                       </div>
-                      <span
-                        style={{
-                          fontSize: '0.9rem',
-                          fontWeight: 900,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.1em',
-                          textAlign: 'center',
-                          padding: '0 1rem',
-                          pointerEvents: 'none',
-                        }}
-                      >
-                        Add photo — camera or library
-                      </span>
-                    </>
-                  )}
-                </label>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    marginTop: '0.75rem',
-                    width: '100%',
-                    borderRadius: '14px',
-                    fontWeight: 800,
-                    minHeight: '44px',
-                    touchAction: 'manipulation',
-                  }}
-                >
-                  Choose photo
-                </Button>
+                    )}
+                  </label>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      position: 'absolute',
+                      bottom: '12px',
+                      right: '12px',
+                      borderRadius: '12px',
+                      zIndex: 20,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    <LuPlus size={16} /> Choose File
+                  </Button>
+                </div>
                 
                 {/* Geofence Verification Block */}
                 <div style={{ marginTop: '1.5rem', padding: '1.5rem', borderRadius: '24px', background: locationVerified ? 'rgba(16, 185, 129, 0.05)' : 'var(--surface-hover)', border: locationVerified ? '1px solid var(--success)' : '1px solid var(--border)' }}>
@@ -601,10 +587,22 @@ const WorkReports: React.FC = () => {
               )}
                <Button 
                 type="button"
-                onClick={() => void handleReportSubmit()}
+                onClick={handleReportSubmit}
                 disabled={submitDisabled}
                 variant="primary"
-                style={{ width: '100%', minHeight: '56px', borderRadius: '24px', fontSize: '1.05rem', fontWeight: 950, boxShadow: '0 20px 40px var(--primary-glow)', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', position: 'relative', zIndex: 2 }}
+                style={{ 
+                  width: '100%', 
+                  minHeight: '56px', 
+                  borderRadius: '24px', 
+                  fontSize: '1.05rem', 
+                  fontWeight: 950, 
+                  boxShadow: submitDisabled ? 'none' : '0 20px 40px var(--primary-glow)', 
+                  opacity: submitDisabled ? 0.4 : 1,
+                  touchAction: 'manipulation', 
+                  WebkitTapHighlightColor: 'transparent', 
+                  position: 'relative', 
+                  zIndex: 2 
+                }}
               >
                 {isCapturing ? (
                   <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
