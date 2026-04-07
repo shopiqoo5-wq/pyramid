@@ -1,3 +1,4 @@
+import '../_utils/suppressDep0169.js';
 import mongoose from 'mongoose';
 
 // Keep serverless functions from crashing on driver-level errors.

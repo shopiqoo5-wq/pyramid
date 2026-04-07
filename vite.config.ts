@@ -16,7 +16,7 @@ export default defineConfig({
             res.setHeader('Content-Type', 'application/json');
             
             if (req.url.includes('/auth/login')) {
-               return res.end(JSON.stringify({ token: 'mock-jwt', user: { name: 'Admin Sameer', role: 'admin' } }));
+               return res.end(JSON.stringify({ token: 'mock-jwt', user: { name: 'Field User Sameer', role: 'employee' } }));
             }
             
             if (req.url.includes('/data/')) {

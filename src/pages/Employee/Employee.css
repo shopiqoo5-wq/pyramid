@@ -295,6 +295,11 @@
   overflow: hidden;
 }
 
+/* Work evidence sheet: must sit above fixed bottom nav (z-index 1000) */
+.work-report-evidence-modal {
+  z-index: 10000;
+}
+
 .scan-frame-container {
   flex: 1;
   border: 4px dashed var(--border);

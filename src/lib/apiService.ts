@@ -347,20 +347,20 @@ export const ApiService: any = {
     };
 
     if (looksImage) {
-      try {
-        const initialMax = 1280;
-        let dataUrl = await ApiService.imageToCompressedDataUrl(body, initialMax, jpegQuality);
-        if (dataUrl.length > VERCEL_JSON_BODY_SAFE_CHARS) {
-          // If still too large, drop to 800px and lower quality for transmission
-          dataUrl = await ApiService.imageToCompressedDataUrl(
-            body,
-            800,
-            0.65
-          );
+      const firstMax = opts?.maxEdge ?? 1280;
+      const attempts: { max: number; q: number }[] = [
+        { max: firstMax, q: jpegQuality },
+        { max: 800, q: 0.65 },
+        { max: 640, q: 0.55 },
+        { max: 480, q: 0.52 },
+      ];
+      for (const { max, q } of attempts) {
+        try {
+          const dataUrl = await ApiService.imageToCompressedDataUrl(body, max, q);
+          if (dataUrl.length <= VERCEL_JSON_BODY_SAFE_CHARS) return dataUrl;
+        } catch {
+          /* try next size */
         }
-        return ensureUnderLimit(dataUrl);
-      } catch {
-        /* fall through to raw read */
       }
     }
     return new Promise<string>((resolve, reject) => {

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 import { Card, Badge, Button } from '../../components/ui';
@@ -81,7 +82,11 @@ const WorkReports: React.FC = () => {
 
   useEffect(() => {
     if (!showForm) return;
-    const missingCoords = !site?.latitude || !site?.longitude;
+    const missingCoords =
+      site?.latitude == null ||
+      site?.longitude == null ||
+      Number.isNaN(site.latitude) ||
+      Number.isNaN(site.longitude);
     if (missingCoords) {
       setLocationVerified(true);
       setDistError('Site coordinates not configured. Verification bypassed for operational continuity.');
@@ -90,8 +95,22 @@ const WorkReports: React.FC = () => {
 
   useEffect(() => () => revokePreviewUrl(), []);
 
+  useEffect(() => {
+    if (!showForm) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showForm]);
+
   const verifyGeofence = () => {
-    if (!site?.latitude || !site?.longitude) {
+    if (
+      site?.latitude == null ||
+      site?.longitude == null ||
+      Number.isNaN(site.latitude) ||
+      Number.isNaN(site.longitude)
+    ) {
       setDistError("Site coordinates not configured. Verification bypassed for operational continuity.");
       setLocationVerified(true);
       return;
@@ -206,7 +225,11 @@ const WorkReports: React.FC = () => {
     return new Date(dateString).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
   };
 
-  const needsSiteVerify = !!(site?.latitude && site?.longitude);
+  const needsSiteVerify =
+    site?.latitude != null &&
+    site?.longitude != null &&
+    !Number.isNaN(site.latitude) &&
+    !Number.isNaN(site.longitude);
   const submitDisabled =
     isCapturing || !reportText?.trim() || !imagePreview || !locationVerified;
   const submitHint = !reportText?.trim()
@@ -340,39 +363,50 @@ const WorkReports: React.FC = () => {
         )}
       </div>
 
-      {/* Submission Modal */}
-      <AnimatePresence>
-        {showForm && (
-          <motion.div 
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            className="scanner-overlay-immersive"
-            style={{ 
-              background: 'var(--bg-color)', 
+      {/* Submission modal: portal + no motion transform — fixes footer off-screen (flex minHeight:0) and mobile taps */}
+      {showForm &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="scanner-overlay-immersive work-report-evidence-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="work-report-evidence-title"
+            style={{
+              background: 'var(--bg-color)',
               backdropFilter: 'blur(40px)',
-              padding: '1.5rem',
-              display: 'flex',
-              flexDirection: 'column',
-              overscrollBehavior: 'contain'
+              WebkitBackdropFilter: 'blur(40px)',
+              overscrollBehavior: 'contain',
+              zIndex: 10000,
             }}
           >
-            <header style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <header style={{ flexShrink: 0, marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <Badge variant="primary" style={{ marginBottom: '0.5rem' }}>EVIDENCE CAPTURE</Badge>
-                <h2 style={{ fontSize: '1.8rem', fontWeight: 950, letterSpacing: '-0.04em', color: 'var(--text-main)' }}>Submit Report</h2>
+                <h2 id="work-report-evidence-title" style={{ fontSize: '1.8rem', fontWeight: 950, letterSpacing: '-0.04em', color: 'var(--text-main)' }}>Submit Report</h2>
               </div>
               <button type="button" onClick={closeReportForm} style={{ background: 'var(--surface-hover)', border: 'none', color: 'var(--text-muted)', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <LuX size={20} />
               </button>
             </header>
             
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2rem', overflowY: 'auto', padding: '0.5rem 0.5rem calc(130px + env(safe-area-inset-bottom, 20px)) 0.5rem' }} className="hide-scrollbar">
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2rem',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                padding: '0.5rem 0.5rem 1rem 0.5rem',
+              }}
+              className="hide-scrollbar"
+            >
               <div className="input-group" style={{ margin: 0 }}>
                 <span className="input-label" style={{ marginBottom: '1rem', display: 'block' }}>Photographic Evidence (Required)</span>
-                <motion.label
+                <label
                   htmlFor={WORK_REPORT_EVIDENCE_INPUT_ID}
-                  whileTap={{ scale: 0.98 }}
                   style={{
                     aspectRatio: '1',
                     borderRadius: '32px',
@@ -388,6 +422,8 @@ const WorkReports: React.FC = () => {
                     overflow: 'hidden',
                     position: 'relative',
                     boxShadow: 'inset 0 4px 24px rgba(0,0,0,0.06)',
+                    WebkitTapHighlightColor: 'transparent',
+                    touchAction: 'manipulation',
                   }}
                 >
                   <input
@@ -405,10 +441,11 @@ const WorkReports: React.FC = () => {
                       inset: 0,
                       width: '100%',
                       height: '100%',
-                      opacity: 0,
+                      opacity: 0.01,
                       cursor: 'pointer',
-                      fontSize: 0,
+                      fontSize: '16px',
                       zIndex: 2,
+                      WebkitAppearance: 'none',
                     }}
                   />
                   {imagePreview ? (
@@ -457,7 +494,23 @@ const WorkReports: React.FC = () => {
                       </span>
                     </>
                   )}
-                </motion.label>
+                </label>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    marginTop: '0.75rem',
+                    width: '100%',
+                    borderRadius: '14px',
+                    fontWeight: 800,
+                    minHeight: '44px',
+                    touchAction: 'manipulation',
+                  }}
+                >
+                  Choose photo
+                </Button>
                 
                 {/* Geofence Verification Block */}
                 <div style={{ marginTop: '1.5rem', padding: '1.5rem', borderRadius: '24px', background: locationVerified ? 'rgba(16, 185, 129, 0.05)' : 'var(--surface-hover)', border: locationVerified ? '1px solid var(--success)' : '1px solid var(--border)' }}>
@@ -487,13 +540,33 @@ const WorkReports: React.FC = () => {
                         </Button>
                       )}
                    </div>
-                   {!site?.latitude && !distError && (
+                   {site?.latitude == null && !distError && (
                      <div style={{ marginTop: '1rem', color: '#fff', fontSize: '0.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'var(--primary)', borderRadius: '16px', boxShadow: '0 8px 20px var(--primary-glow)', opacity: 0.9 }}>
                         <LuInfo size={18} /> Site coordinates not configured. Verification bypassed.
                      </div>
                    )}
                    {distError && (
-                     <div style={{ marginTop: '1rem', color: '#fff', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'var(--danger)', borderRadius: '16px', boxShadow: '0 8px 20px rgba(239, 68, 68, 0.4)' }}>
+                     <div
+                       style={{
+                         marginTop: '1rem',
+                         color: '#fff',
+                         fontSize: '0.85rem',
+                         fontWeight: 800,
+                         display: 'flex',
+                         alignItems: 'center',
+                         gap: '8px',
+                         padding: '1rem',
+                         borderRadius: '16px',
+                         background:
+                           /bypass|not configured|GPS Failure/i.test(distError)
+                             ? 'var(--primary)'
+                             : 'var(--danger)',
+                         boxShadow:
+                           /bypass|not configured|GPS Failure/i.test(distError)
+                             ? '0 8px 20px var(--primary-glow)'
+                             : '0 8px 20px rgba(239, 68, 68, 0.4)',
+                       }}
+                     >
                         <LuInfo size={18} /> {distError}
                      </div>
                    )}
@@ -512,7 +585,15 @@ const WorkReports: React.FC = () => {
               </div>
             </div>
 
-            <div style={{ padding: '1.25rem 0 calc(1.25rem + env(safe-area-inset-bottom, 24px))', background: 'var(--bg-color)', borderTop: '1px solid var(--border)', marginTop: 'auto', position: 'sticky', bottom: 0, zIndex: 50, touchAction: 'manipulation' }}>
+            <div
+              style={{
+                flexShrink: 0,
+                padding: '1rem 0 calc(1rem + env(safe-area-inset-bottom, 20px))',
+                background: 'var(--bg-color)',
+                borderTop: '1px solid var(--border)',
+                touchAction: 'manipulation',
+              }}
+            >
               {submitHint && (
                 <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', fontWeight: 800, color: 'var(--primary)', textAlign: 'center', background: 'var(--primary-glow)', padding: '0.5rem', borderRadius: '12px' }}>
                   {submitHint}
@@ -523,7 +604,7 @@ const WorkReports: React.FC = () => {
                 onClick={() => void handleReportSubmit()}
                 disabled={submitDisabled}
                 variant="primary"
-                style={{ width: '100%', minHeight: '64px', borderRadius: '24px', fontSize: '1.1rem', fontWeight: 950, boxShadow: '0 20px 40px var(--primary-glow)', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                style={{ width: '100%', minHeight: '56px', borderRadius: '24px', fontSize: '1.05rem', fontWeight: 950, boxShadow: '0 20px 40px var(--primary-glow)', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', position: 'relative', zIndex: 2 }}
               >
                 {isCapturing ? (
                   <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
@@ -533,9 +614,9 @@ const WorkReports: React.FC = () => {
                 {isCapturing ? 'TRANSMITTING...' : 'UPLOAD EVIDENCE'}
               </Button>
             </div>
-          </motion.div>
+          </div>,
+          document.body
         )}
-      </AnimatePresence>
 
       {/* Fullscreen Viewer */}
       {fullscreenImage && (
