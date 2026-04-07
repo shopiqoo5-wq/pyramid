@@ -101,12 +101,8 @@ export const ApiService: any = {
   },
 
   async getCurrentUser() {
-    const hadToken = !!localStorage.getItem('pyramid_auth_token');
     try {
       const user = await fetchApi('/auth/me');
-      if (hadToken && user == null) {
-        localStorage.removeItem('pyramid_auth_token');
-      }
       if (user == null) return null;
       return normalizeMongoDoc(user) as typeof user;
     } catch {
@@ -247,6 +243,23 @@ export const ApiService: any = {
   getNotifications(uid: string) { return this.fetchData('notifications', { userId: uid }); },
   addNotification(d: any) { return this.submitData('notifications', d); },
   markNotificationRead(id: string) { return this.updateData('notifications', id, { read: true }); },
+
+  // Workforce & Roles
+  getCustomRoles() { return this.fetchData('custom_roles'); },
+  addCustomRole(d: any) { return this.submitData('custom_roles', d); },
+  getWorkAssignments() { return this.fetchData('work_assignments'); },
+  addWorkAssignment(d: any) { return this.submitData('work_assignments', d); },
+  getSiteProtocols() { return this.fetchData('site_protocols'); },
+  addSiteProtocol(d: any) { return this.submitData('site_protocols', d); },
+
+  // Compliance & Governance
+  getComplianceDocs() { return this.fetchData('compliance_docs'); },
+  addComplianceDoc(d: any) { return this.submitData('compliance_docs', d); },
+  getFraudFlags() { return this.fetchData('fraud_flags'); },
+  getExceptions() { return this.fetchData('exceptions'); },
+  getDailyChecklists() { return this.fetchData('daily_checklists'); },
+  getBatches() { return this.fetchData('batches'); },
+  getPhotoVerifications() { return this.fetchData('photo_verifications'); },
 
   // Infrastructure Cont.
   getWebhooks() { return this.fetchData('webhooks'); },

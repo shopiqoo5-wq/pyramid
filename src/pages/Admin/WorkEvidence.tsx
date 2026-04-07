@@ -23,12 +23,12 @@ const WorkEvidence: React.FC = () => {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const initSupabase = useStore(state => state.initSupabase);
-  const isSupabaseConnected = useStore(state => state.isSupabaseConnected);
+  const initBackend = useStore(state => state.initBackend);
+  const isBackendConnected = useStore(state => state.isBackendConnected);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await initSupabase();
+    await initBackend();
     setIsRefreshing(false);
   };
 
@@ -93,7 +93,7 @@ const WorkEvidence: React.FC = () => {
           <p style={{ color: 'var(--text-muted)' }}>Audit, verify, and grade photographic evidence submitted by field operatives.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          {(isSupabaseConnected || ApiService.hasAuthToken()) && (
+          {(isBackendConnected || ApiService.hasAuthToken()) && (
             <Button 
               variant="ghost" 
               onClick={handleRefresh}
@@ -101,7 +101,7 @@ const WorkEvidence: React.FC = () => {
               style={{ borderRadius: '12px', border: '1px solid var(--primary)', color: 'var(--primary)' }}
             >
               <LuRefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} style={{ marginRight: '8px' }} />
-              {isRefreshing ? 'Synchronizing...' : 'Sync with Cloud'}
+              {isRefreshing ? 'Synchronizing...' : 'Sync from server'}
             </Button>
           )}
         </div>

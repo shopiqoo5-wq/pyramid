@@ -33,8 +33,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    const userId = String((user as { _id: { toString(): string } })._id);
     const token = jwt.sign(
-      { userId: user.id, role: user.role, companyId: user.companyId },
+      { userId, role: user.role, companyId: user.companyId },
       JWT_SECRET,
       { expiresIn: '7d' }
     );

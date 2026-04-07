@@ -17,7 +17,7 @@ import { calculateIndianGST } from '../utils/gst';
 import { ApiService } from '../lib/apiService';
 
 /** Prevents overlapping hydrations (parallel /api/data/* without token + duplicate work). */
-let initSupabaseInFlight: Promise<void> | null = null;
+let initBackendInFlight: Promise<void> | null = null;
 
 const SYSTEM_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -33,8 +33,8 @@ interface AppState {
   logout: () => Promise<void>;
   
   // App initialization
-  initSupabase: () => Promise<void>;
-  isSupabaseConnected: boolean;
+  initBackend: () => Promise<void>;
+  isBackendConnected: boolean;
   
   // Data
   users: User[];
@@ -264,8 +264,8 @@ interface AppState {
   language: 'en' | 'hi' | 'mr';
   setLanguage: (lang: 'en' | 'hi' | 'mr') => void;
   
-  // Cloud Disaster Recovery
-  pushLocalToCloud: () => Promise<void>;
+  /** Push local-only rows to Mongo via /api (admin recovery). */
+  pushLocalToBackend: () => Promise<void>;
 }
 
 
@@ -286,7 +286,7 @@ export const useStore = create<AppState>()(
       status: 'Draft',
       createdAt: new Date().toISOString()
     };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addQuotation(newQuotation);
     }
     set(state => ({ quotations: [newQuotation, ...state.quotations] }));
@@ -323,16 +323,16 @@ export const useStore = create<AppState>()(
     addAlert({ message: 'Quotation successfully executed as Corporate Agreement!', type: 'success' });
   },
 
-  isSupabaseConnected: false,
+  isBackendConnected: false,
   currentUser: null,
   login: async (companyIdentifier, userIdentifier, password) => {
     // 1. Always try API auth first so JWT token is available for protected routes.
     try {
       const user = await ApiService.signIn(userIdentifier, password);
       if (user) {
-        set({ currentUser: user, isSupabaseConnected: true });
+        set({ currentUser: user, isBackendConnected: true });
         get().addAlert({ message: `Access Authorized: ${user.name}`, type: 'success' });
-        await get().initSupabase();
+        await get().initBackend();
         return true;
       }
     } catch (err: any) {
@@ -359,15 +359,15 @@ export const useStore = create<AppState>()(
       const sanitized = sanitizeUser(user);
       // Local fallback mode: keep user signed in locally, disable protected API writes.
       await ApiService.signOut();
-      set({ currentUser: sanitized as User, isSupabaseConnected: false });
+      set({ currentUser: sanitized as User, isBackendConnected: false });
       get().addAlert({ message: `Access Authorized: ${user.name}${isSystemAdmin ? ' (System)' : ''}`, type: 'success' });
-      get().addAlert({ message: 'Running in local mode. Cloud save is disabled until API login succeeds.', type: 'warning' });
+      get().addAlert({ message: 'Running in local mode. Server save is disabled until API login succeeds.', type: 'warning' });
       return true;
     }
     return false;
   },
   logout: async () => {
-    // In Cloud mode, we use ApiService.signOut()
+    // When using API auth, clear JWT via ApiService.signOut()
     await ApiService.signOut();
     get().addAlert({ message: 'Logged out successfully.', type: 'info' });
     
@@ -377,20 +377,20 @@ export const useStore = create<AppState>()(
       currentUser: null, 
       cart: [],
       // We no longer nuke history here, as the user wants logs to be permanent.
-      // Hydration from Supabase on next login will refresh these.
+      // Hydration from Mongo/API on next login will refresh these.
     });
   },
 
-  initSupabase: async () => {
-    if (initSupabaseInFlight) return initSupabaseInFlight;
+  initBackend: async () => {
+    if (initBackendInFlight) return initBackendInFlight;
 
-    initSupabaseInFlight = (async () => {
+    initBackendInFlight = (async () => {
     const { addAlert } = get();
 
     try {
       const isReachable = await ApiService.checkConnection();
       if (!isReachable) {
-        set({ isSupabaseConnected: false });
+        set({ isBackendConnected: false });
         console.warn('⚠️ Backend unreachable. Falling back to local cache.');
         addAlert({ message: 'Backend unreachable. Saving is disabled until the database is online.', type: 'error' });
         return;
@@ -401,18 +401,26 @@ export const useStore = create<AppState>()(
       let sessionUser = null;
       try {
         sessionUser = await ApiService.getCurrentUser();
-        if (sessionUser) {
-          set({ currentUser: sessionUser, isSupabaseConnected: true });
-          console.log(`👤 Session restored: ${sessionUser.name}`);
-        } else {
-          console.log('ℹ️ No active session — synchronization deferred.');
-          set({ currentUser: null, isSupabaseConnected: false }); // Clear stale auth
-          return; // Stop here: avoids 401s on protected data routes
-        }
       } catch (err: any) {
         console.warn('Session restore failed:', err.message || err);
-        set({ currentUser: null, isSupabaseConnected: false }); // Block unauthorized data flow
-        return; // Stop here: avoids 401s
+      }
+
+      if (sessionUser) {
+        set({ currentUser: sessionUser, isBackendConnected: true });
+        console.log(`👤 Session restored: ${sessionUser.name}`);
+      } else if (!ApiService.hasAuthToken()) {
+        console.log('ℹ️ No active session — synchronization deferred.');
+        set({ currentUser: null, isBackendConnected: false });
+        return;
+      } else {
+        const cached = get().currentUser;
+        if (!cached) {
+          set({ isBackendConnected: false });
+          console.log('ℹ️ Token without /auth/me user — sign in again or check API.');
+          return;
+        }
+        set({ isBackendConnected: true });
+        console.log('ℹ️ Using cached user after /auth/me returned empty; continuing Mongo/API sync.');
       }
 
       addAlert({ message: 'Backend connected. Synchronization online.', type: 'success' });
@@ -425,14 +433,14 @@ export const useStore = create<AppState>()(
         allowEmptyReplace = false
       ) => {
         try {
-          const cloudData = await fetcher();
-          if (!Array.isArray(cloudData)) return;
-          if (cloudData.length > 0 || allowEmptyReplace) {
-            setter(cloudData);
-            if (cloudData.length > 0) console.log(`✅ Synced: ${label}`);
-            else console.log(`ℹ️ Cloud ${label} empty — replaced local list from server.`);
+          const serverRows = await fetcher();
+          if (!Array.isArray(serverRows)) return;
+          if (serverRows.length > 0 || allowEmptyReplace) {
+            setter(serverRows);
+            if (serverRows.length > 0) console.log(`✅ Synced: ${label}`);
+            else console.log(`ℹ️ Server ${label} empty — replaced local list from API.`);
           } else {
-            console.log(`ℹ️ Cloud ${label} empty. Retaining local cache.`);
+            console.log(`ℹ️ Server ${label} empty. Retaining local cache.`);
           }
         } catch (err: any) {
           console.error(`❌ Sync Failed [${label}]:`, err.message || err);
@@ -441,32 +449,32 @@ export const useStore = create<AppState>()(
 
       // Atomic hydration sequence
       await Promise.all([
-        fetchData('Products', ApiService.getProducts, (d) => set({ products: d }), 'products'),
-        fetchData('Companies', ApiService.getCompanies, (d) => set({ companies: d }), 'companies'),
+        fetchData('Products', () => ApiService.getProducts(), (d) => set({ products: d }), 'products'),
+        fetchData('Companies', () => ApiService.getCompanies(), (d) => set({ companies: d }), 'companies'),
         fetchData('Locations', () => ApiService.getLocations(), (d) => set({ locations: d }), 'locations'),
         fetchData('Orders', () => ApiService.getOrders(), (d) => set({ orders: d }), 'orders'),
-        fetchData('Inventory', ApiService.getInventory, (d) => set({ inventory: d }), 'inventory'),
-        fetchData('Users', ApiService.getUsers, (d) => set({ users: d }), 'users'),
+        fetchData('Inventory', () => ApiService.getInventory(), (d) => set({ inventory: d }), 'inventory'),
+        fetchData('Users', () => ApiService.getUsers(), (d) => set({ users: d }), 'users'),
         fetchData('Attendance', () => ApiService.getAttendance(), (d) => set({ attendanceRecords: d }), 'attendanceRecords', true),
-        fetchData('Work Reports', ApiService.getWorkReports, (d) => set({ workReports: d }), 'workReports', true),
-        fetchData('Incidents', ApiService.getIncidents, (d) => set({ fieldIncidents: d }), 'fieldIncidents', true),
-        fetchData('Time Off', ApiService.getTimeOffRequests, (d) => set({ timeOffRequests: d }), 'timeOffRequests', true),
-        fetchData('Shifts', ApiService.getShifts, (d) => set({ employeeShifts: d }), 'employeeShifts'),
-        fetchData('Employees', ApiService.getEmployees, (d) => set({ employees: d }), 'employees'),
-        fetchData('Protocols', ApiService.getSiteProtocols, (d) => set({ siteProtocols: d }), 'siteProtocols'),
-        fetchData('Assignments', ApiService.getWorkAssignments, (d) => set({ workAssignments: d }), 'workAssignments'),
-        fetchData('Bundles', ApiService.getProductBundles, (d) => set({ productBundles: d }), 'productBundles'),
-        fetchData('Roles', ApiService.getCustomRoles, (d) => set({ customRoles: d }), 'customRoles'),
-        fetchData('Audit Logs', ApiService.getAuditLogs, (d) => set({ auditLogs: d }), 'auditLogs'),
-        fetchData('Inventory Logs', ApiService.getInventoryLogs, (d) => set({ inventoryLogs: d }), 'inventoryLogs'),
-        fetchData('Quotations', ApiService.getQuotations, (d) => set({ quotations: d }), 'quotations'),
+        fetchData('Work Reports', () => ApiService.getWorkReports(), (d) => set({ workReports: d }), 'workReports', true),
+        fetchData('Incidents', () => ApiService.getIncidents(), (d) => set({ fieldIncidents: d }), 'fieldIncidents', true),
+        fetchData('Time Off', () => ApiService.getTimeOffRequests(), (d) => set({ timeOffRequests: d }), 'timeOffRequests', true),
+        fetchData('Shifts', () => ApiService.getShifts(), (d) => set({ employeeShifts: d }), 'employeeShifts'),
+        fetchData('Employees', () => ApiService.getEmployees(), (d) => set({ employees: d }), 'employees'),
+        fetchData('Protocols', () => ApiService.getSiteProtocols(), (d) => set({ siteProtocols: d }), 'siteProtocols'),
+        fetchData('Assignments', () => ApiService.getWorkAssignments(), (d) => set({ workAssignments: d }), 'workAssignments'),
+        fetchData('Bundles', () => ApiService.getProductBundles(), (d) => set({ productBundles: d }), 'productBundles'),
+        fetchData('Roles', () => ApiService.getCustomRoles(), (d) => set({ customRoles: d }), 'customRoles'),
+        fetchData('Audit Logs', () => ApiService.getAuditLogs(), (d) => set({ auditLogs: d }), 'auditLogs'),
+        fetchData('Inventory Logs', () => ApiService.getInventoryLogs(), (d) => set({ inventoryLogs: d }), 'inventoryLogs'),
+        fetchData('Quotations', () => ApiService.getQuotations(), (d) => set({ quotations: d }), 'quotations'),
         fetchData('Tickets', () => ApiService.getTickets(), (d) => set({ supportTickets: d }), 'supportTickets', true),
         fetchData('Recurring Orders', () => ApiService.getRecurringOrders(), (d) => set({ recurringOrders: d }), 'recurringOrders'),
-        fetchData('Webhooks', ApiService.getWebhooks, (d) => set({ webhooks: d }), 'webhooks'),
+        fetchData('Webhooks', () => ApiService.getWebhooks(), (d) => set({ webhooks: d }), 'webhooks'),
         fetchData('Compliance Docs', () => ApiService.getComplianceDocs(), (d) => set({ complianceDocs: d }), 'complianceDocs'),
-        fetchData('Fraud Flags', ApiService.getFraudFlags, (d) => set({ fraudFlags: d }), 'fraudFlags'),
-        fetchData('Exceptions', ApiService.getExceptions, (d) => set({ exceptions: d }), 'exceptions'),
-        fetchData('Daily Checklists', ApiService.getDailyChecklists, (d) => {
+        fetchData('Fraud Flags', () => ApiService.getFraudFlags(), (d) => set({ fraudFlags: d }), 'fraudFlags'),
+        fetchData('Exceptions', () => ApiService.getExceptions(), (d) => set({ exceptions: d }), 'exceptions'),
+        fetchData('Daily Checklists', () => ApiService.getDailyChecklists(), (d) => {
           const progress: Record<string, string[]> = {};
           const status: Record<string, string> = {};
           d.forEach((item: any) => {
@@ -475,10 +483,10 @@ export const useStore = create<AppState>()(
           });
           set({ dailyTaskProgress: progress, submittedChecklists: status });
         }, 'submittedChecklists'),
-        fetchData('Batches', ApiService.getBatches, (d) => set({ batches: d }), 'batches'),
+        fetchData('Batches', () => ApiService.getBatches(), (d) => set({ batches: d }), 'batches'),
         fetchData('Favorites', () => get().currentUser ? ApiService.getFavorites(get().currentUser!.id) : Promise.resolve([]), (d) => set({ favorites: d }), 'favorites'),
         fetchData('API Keys', () => get().currentUser?.companyId ? ApiService.getAPIKeys(get().currentUser!.companyId!) : Promise.resolve([]), (d) => set({ apiKeys: d }), 'apiKeys'),
-        fetchData('Photos', ApiService.getPhotoVerifications, (d) => set({ photos: d }), 'photos'),
+        fetchData('Photos', () => ApiService.getPhotoVerifications(), (d) => set({ photos: d }), 'photos'),
       ]);
 
       const user = get().currentUser;
@@ -487,16 +495,16 @@ export const useStore = create<AppState>()(
       }
 
     } catch (err: any) {
-      console.error('CRITICAL: Supabase hydration crashed:', err);
-      addAlert({ message: 'Cloud sync interrupted. Running in local-only mode.', type: 'warning' });
-      set({ isSupabaseConnected: false });
+      console.error('CRITICAL: backend sync crashed:', err);
+      addAlert({ message: 'Backend sync interrupted. Running in local-only mode.', type: 'warning' });
+      set({ isBackendConnected: false });
     }
     })();
 
     try {
-      await initSupabaseInFlight;
+      await initBackendInFlight;
     } finally {
-      initSupabaseInFlight = null;
+      initBackendInFlight = null;
     }
   },
 
@@ -691,14 +699,14 @@ export const useStore = create<AppState>()(
       status: 'pending' as const,
       createdAt: new Date().toISOString()
     };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.createReturnRequest(newReturn);
     }
     get().addAlert({ message: 'Return request submitted successfully!', type: 'success' });
     set(state => ({ returnRequests: [newReturn, ...state.returnRequests] }));
   },
   updateReturnStatus: async (id, status) => {
-    const { returnRequests, isSupabaseConnected, addNotification, logAction, addAlert, companies, orders, products } = get();
+    const { returnRequests, isBackendConnected, addNotification, logAction, addAlert, companies, orders, products } = get();
     const request = returnRequests.find(r => r.id === id);
     if (!request || request.status === status) return;
 
@@ -747,7 +755,7 @@ export const useStore = create<AppState>()(
       addAlert({ message: `Return ${id} rejected.`, type: 'error' });
     }
 
-    if (isSupabaseConnected) {
+    if (isBackendConnected) {
       await ApiService.updateReturnStatus(id, status);
     }
 
@@ -763,7 +771,7 @@ export const useStore = create<AppState>()(
       permissions,
       createdAt: new Date().toISOString()
     };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addAPIKey(newKey);
     }
     set(state => ({ apiKeys: [...state.apiKeys, newKey] }));
@@ -771,7 +779,7 @@ export const useStore = create<AppState>()(
     return newKey as any;
   },
   revokeAPIKey: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteAPIKey(id);
     }
     set(state => ({
@@ -786,7 +794,7 @@ export const useStore = create<AppState>()(
       status: 'pending' as const,
       createdAt: new Date().toISOString()
     };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addPhotoVerification(newPhoto);
     }
     set(state => ({
@@ -819,7 +827,7 @@ export const useStore = create<AppState>()(
     logAction(order.placedBy, 'update_order_status', `Order ${order.customId} updated to ${status}`);
     addAlert({ message: `Order ${order.customId} status updated to ${status}.`, type: 'success' });
 
-      if (get().isSupabaseConnected) {
+      if (get().isBackendConnected) {
         await ApiService.updateOrderStatus(orderId, status);
       }
 
@@ -914,8 +922,7 @@ export const useStore = create<AppState>()(
           warehouseId: wId,
         } as Order;
 
-        // Persist to Supabase if config is live
-        if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+        if (get().isBackendConnected) {
           await ApiService.placeOrder(newOrd);
         }
 
@@ -951,7 +958,7 @@ export const useStore = create<AppState>()(
 
 
     updateUserFaceImage: async (userId, imageUrl) => {
-      if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_')) {
+      if (get().isBackendConnected) {
         await ApiService.updateUserFaceImage(userId, imageUrl);
       }
       set(state => ({
@@ -963,13 +970,13 @@ export const useStore = create<AppState>()(
    toggleFavorite: async (productId, companyId) => {
     const existing = get().favorites.find(f => f.productId === productId && f.companyId === companyId);
     if (existing) {
-      if (get().isSupabaseConnected) {
+      if (get().isBackendConnected) {
         await ApiService.deleteFavorite(existing.id);
       }
       set(state => ({ favorites: state.favorites.filter(f => f.id !== existing.id) }));
     } else {
       const newFav = { id: generateUUID(), productId, companyId, userId: get().currentUser?.id };
-      if (get().isSupabaseConnected) {
+      if (get().isBackendConnected) {
         await ApiService.addFavorite(newFav);
       }
       set(state => ({
@@ -979,7 +986,7 @@ export const useStore = create<AppState>()(
   },
 
   logAction: async (userId, action, details) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.logAction(userId, action, details);
     }
     set((state) => ({
@@ -1000,7 +1007,7 @@ export const useStore = create<AppState>()(
       read: false,
       createdAt: new Date().toISOString()
     };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addNotification(newNotif);
     }
     set((state) => ({
@@ -1009,7 +1016,7 @@ export const useStore = create<AppState>()(
   },
 
   markNotificationAsRead: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.markNotificationRead(id);
     }
     set((state) => ({
@@ -1023,7 +1030,7 @@ export const useStore = create<AppState>()(
       id: generateUUID(),
       createdAt: new Date().toISOString()
     };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addRecurringOrder(newOrder);
     }
     set((state) => ({
@@ -1038,7 +1045,7 @@ export const useStore = create<AppState>()(
     if (!order) return;
     
     const newStatus = order.status === 'active' ? 'paused' : 'active';
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateRecurringOrderStatus(id, newStatus);
     }
     set((state) => ({
@@ -1047,7 +1054,7 @@ export const useStore = create<AppState>()(
   },
 
   deleteRecurringOrder: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteRecurringOrder(id);
     }
     set((state) => ({
@@ -1058,7 +1065,7 @@ export const useStore = create<AppState>()(
 
   addProduct: async (productStart) => {
     try {
-      if (!get().isSupabaseConnected) {
+      if (!get().isBackendConnected) {
         get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
         return;
       }
@@ -1072,7 +1079,7 @@ export const useStore = create<AppState>()(
 
   updateProduct: async (id, updates) => {
     try {
-      if (!get().isSupabaseConnected) {
+      if (!get().isBackendConnected) {
         get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
         return;
       }
@@ -1086,7 +1093,7 @@ export const useStore = create<AppState>()(
 
   deleteProduct: async (id) => {
     try {
-      if (!get().isSupabaseConnected) {
+      if (!get().isBackendConnected) {
         get().addAlert({ message: 'Cannot delete: database is offline.', type: 'error' });
         return;
       }
@@ -1100,7 +1107,7 @@ export const useStore = create<AppState>()(
 
   addCompany: async (companyStart) => {
     try {
-      if (!get().isSupabaseConnected) {
+      if (!get().isBackendConnected) {
         get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
         return;
       }
@@ -1114,7 +1121,7 @@ export const useStore = create<AppState>()(
 
   updateCompany: async (id, updates) => {
     try {
-      if (!get().isSupabaseConnected) {
+      if (!get().isBackendConnected) {
         get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
         return;
       }
@@ -1128,7 +1135,7 @@ export const useStore = create<AppState>()(
 
   deleteCompany: async (id) => {
     try {
-      if (!get().isSupabaseConnected) {
+      if (!get().isBackendConnected) {
         get().addAlert({ message: 'Cannot delete: database is offline.', type: 'error' });
         return;
       }
@@ -1142,7 +1149,7 @@ export const useStore = create<AppState>()(
 
   addUser: async (userStart) => {
     try {
-      if (!get().isSupabaseConnected) {
+      if (!get().isBackendConnected) {
         get().addAlert({ message: 'Cannot save: database is offline.', type: 'error' });
         return;
       }
@@ -1164,7 +1171,7 @@ export const useStore = create<AppState>()(
     const newBundle = { ...bundleStart, id: generateUUID() };
     logAction('admin', 'create_bundle', `Created new bundle: ${bundleStart.name} (${bundleStart.sku})`);
     
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addProductBundle(newBundle);
     }
 
@@ -1176,7 +1183,7 @@ export const useStore = create<AppState>()(
     const bundle = productBundles.find(b => b.id === id);
     logAction('admin', 'update_bundle', `Updated bundle: ${bundle?.name || id}`);
     
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateProductBundle(id, updates);
     }
 
@@ -1190,7 +1197,7 @@ export const useStore = create<AppState>()(
     const bundle = productBundles.find(b => b.id === id);
     logAction('admin', 'delete_bundle', `Deleted bundle: ${bundle?.name || id}`);
     
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteProductBundle(id);
     }
 
@@ -1201,7 +1208,7 @@ export const useStore = create<AppState>()(
 
   updateStock: async (productId, warehouseId, quantityDelta, reason = 'Manual Adjustment', userId, batchId) => {
     const actorId = userId || get().currentUser?.id || SYSTEM_UUID;
-    const { inventory, products, isSupabaseConnected } = get();
+    const { inventory, products, isBackendConnected } = get();
     const inv = inventory.find(i => i.productId === productId && i.warehouseId === warehouseId);
     if (!inv) return;
 
@@ -1224,7 +1231,7 @@ export const useStore = create<AppState>()(
       notes: reason
     };
 
-    if (isSupabaseConnected) {
+    if (isBackendConnected) {
       ApiService.updateStock(productId, warehouseId, newQuantity).then();
       ApiService.addInventoryLog(newLog).then();
     }
@@ -1312,7 +1319,7 @@ export const useStore = create<AppState>()(
              notes: `Order ${order.customId} dispatched.`
            };
 
-           if (get().isSupabaseConnected) {
+           if (get().isBackendConnected) {
              ApiService.addInventoryLog(log).then();
            }
 
@@ -1347,7 +1354,7 @@ export const useStore = create<AppState>()(
               notes: `Order ${order.customId} ${toStatus}. Stock returned.`
             };
 
-            if (get().isSupabaseConnected) {
+            if (get().isBackendConnected) {
               ApiService.addInventoryLog(log).then();
             }
 
@@ -1380,7 +1387,7 @@ export const useStore = create<AppState>()(
       return; // block role escalation
     }
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateUser(id, updates);
     }
     set((state) => ({
@@ -1414,7 +1421,7 @@ export const useStore = create<AppState>()(
 
     logAction('admin', 'delete_user', `Removed user: ${user.name} (${user.email})`);
     
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteUser(id);
     }
 
@@ -1429,7 +1436,7 @@ export const useStore = create<AppState>()(
     const company = get().companies.find(c => c.id === locationStart.companyId);
     get().logAction('admin', 'create_location', `Added location ${locationStart.name} for ${company?.name || locationStart.companyId}`);
     
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       const newLoc = await ApiService.addLocation(locationStart);
       set((state) => ({ locations: [newLoc, ...state.locations] }));
     } else {
@@ -1443,7 +1450,7 @@ export const useStore = create<AppState>()(
     const company = companies.find(c => c.id === contractStart.companyId);
     logAction('admin', 'create_contract', `Established ${contractStart.type} contract for ${company?.name || 'unknown client'}.`);
     
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       const newContract = await ApiService.addContract(contractStart) as Contract;
       set(state => ({ contracts: [newContract, ...state.contracts] }));
     } else {
@@ -1453,7 +1460,7 @@ export const useStore = create<AppState>()(
   },
 
   deleteLocation: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteLocation(id);
     }
     set((state) => ({
@@ -1462,7 +1469,7 @@ export const useStore = create<AppState>()(
   },
 
   updateLocation: async (id, updates) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateLocation(id, updates);
     }
     set((state) => ({
@@ -1472,7 +1479,7 @@ export const useStore = create<AppState>()(
   },
 
   updateContract: async (id, updates) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       const updated = await ApiService.updateContract(id, updates);
       set(state => ({
         contracts: state.contracts.map(c => c.id === id ? updated : c)
@@ -1485,7 +1492,7 @@ export const useStore = create<AppState>()(
   },
 
   deleteContract: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteContract(id);
     }
     set((state) => ({
@@ -1504,7 +1511,7 @@ export const useStore = create<AppState>()(
       newPricing.push({ id: generateUUID(), companyId, productId, negotiatedPrice: price });
     }
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.upsertClientPricing({
            companyId, productId, negotiatedPrice: price
       });
@@ -1555,7 +1562,7 @@ export const useStore = create<AppState>()(
 
   addBatch: async (batchStart) => {
     const newBatch: Batch = { ...batchStart, id: generateUUID() };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addBatch(newBatch);
     }
     set(state => ({ 
@@ -1571,7 +1578,7 @@ export const useStore = create<AppState>()(
   },
 
   triggerException: async (excStart) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.reportException(excStart);
     }
     const newExc: AppException = {
@@ -1590,7 +1597,7 @@ export const useStore = create<AppState>()(
   },
 
   resolveException: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.resolveException(id);
     }
     set(state => ({
@@ -1599,7 +1606,7 @@ export const useStore = create<AppState>()(
   },
 
   flagFraud: async (flagStart) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.flagFraud(flagStart);
     }
     const newFlag: FraudFlag = {
@@ -1618,7 +1625,7 @@ export const useStore = create<AppState>()(
   },
 
   updateFraudStatus: async (id, status) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateFraudStatus(id, status);
     }
     set(state => ({
@@ -1627,7 +1634,7 @@ export const useStore = create<AppState>()(
   },
 
   addComplianceDoc: async (docStart) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addComplianceDoc(docStart);
     }
     const newDoc: ComplianceDoc = {
@@ -1640,7 +1647,7 @@ export const useStore = create<AppState>()(
   },
 
   deleteComplianceDoc: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteComplianceDoc(id);
     }
     set(state => ({
@@ -1654,7 +1661,7 @@ export const useStore = create<AppState>()(
       .filter(o => o.companyId === companyId && !o.isPaid && ['dispatched', 'delivered'].includes(o.status))
       .map(o => o.id);
 
-    if (import.meta.env.VITE_SUPABASE_URL && !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_') && unpaidOrderIds.length > 0) {
+    if (get().isBackendConnected && unpaidOrderIds.length > 0) {
       await ApiService.updateOrdersPaid(unpaidOrderIds, true);
     }
     
@@ -1671,7 +1678,7 @@ export const useStore = create<AppState>()(
     const settledOrders = orders.filter(o => orderIds.includes(o.id));
     const totalSettled = settledOrders.reduce((sum, o) => sum + o.netAmount, 0);
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateOrdersPaid(orderIds, true);
       await ApiService.updateCompanyCredit(companyId, totalSettled);
     }
@@ -1697,7 +1704,7 @@ export const useStore = create<AppState>()(
       return acc;
     }, {} as Record<string, number>);
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateOrdersPaid(orderIds, true);
       for (const [companyId, amount] of Object.entries(settlementByCompany)) {
         await ApiService.updateCompanyCredit(companyId, amount);
@@ -1717,7 +1724,7 @@ export const useStore = create<AppState>()(
   },
 
   markOrdersAsTallyExported: async (orderIds) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.markOrdersTallyExported(orderIds);
     }
     set((state) => ({
@@ -1742,7 +1749,7 @@ export const useStore = create<AppState>()(
 
   addWebhook: async (webhookStart) => {
     const newWh = { ...webhookStart, id: generateUUID(), createdAt: new Date().toISOString() };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addWebhook(newWh);
     }
     set((state) => ({ webhooks: [newWh, ...state.webhooks] }));
@@ -1815,7 +1822,7 @@ export const useStore = create<AppState>()(
   },
 
   updateIncidentStatus: async (id, status, adminRemarks) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateIncidentStatus(id, { status, adminRemarks });
     }
     set(state => ({
@@ -1833,7 +1840,7 @@ export const useStore = create<AppState>()(
   },
 
   updateWebhook: async (id, updates) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateWebhook(id, updates);
     }
     set((state) => ({ webhooks: state.webhooks.map(w => w.id === id ? { ...w, ...updates } : w) }));
@@ -1843,7 +1850,7 @@ export const useStore = create<AppState>()(
     const { webhooks, logAction } = get();
     const wh = webhooks.find(w => w.id === id);
     logAction('admin', 'delete_webhook', `Removed webhook: ${wh?.name || id}`);
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteWebhook(id);
     }
     set((state) => ({ webhooks: state.webhooks.filter(w => w.id !== id) }));
@@ -1855,7 +1862,7 @@ export const useStore = create<AppState>()(
     if (!webhook) return;
     const newActive = !webhook.active;
     logAction('admin', 'toggle_webhook', `${newActive ? 'Enabled' : 'Disabled'} webhook: ${webhook?.name || id}`);
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
        await ApiService.toggleWebhookActive(id, newActive);
     }
     set((state) => ({
@@ -1868,7 +1875,7 @@ export const useStore = create<AppState>()(
       settings: { ...state.settings, ...newSettings }
     }));
     
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateSettings(newSettings);
     }
   },
@@ -1885,7 +1892,7 @@ export const useStore = create<AppState>()(
       active: true,
       status: 'active'
     };
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addQRToken(newToken);
     }
     set(state => ({ qrLogins: [newToken, ...state.qrLogins] }));
@@ -1894,7 +1901,7 @@ export const useStore = create<AppState>()(
   },
 
   revokeQRToken: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.revokeQRToken(id);
     }
     set(state => ({
@@ -1903,14 +1910,14 @@ export const useStore = create<AppState>()(
   },
 
   loginWithQR: async (token) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       const user = await ApiService.loginWithQR(token);
       if (user) {
         set({ currentUser: user as User });
         get().logAction(user.id, 'qr_login', `Logged in via QR code (Token: ${token.slice(0, 5)}...)`);
         
         // Hydrate data immediately
-        await get().initSupabase();
+        await get().initBackend();
         return true;
       }
     }
@@ -1923,7 +1930,7 @@ export const useStore = create<AppState>()(
         get().logAction(user.id, 'qr_login', `Logged in via QR code (Token: ${token.slice(0, 5)}...)`);
         
         // Refresh session data
-        await get().initSupabase();
+        await get().initBackend();
         return true;
       }
     }
@@ -1954,7 +1961,7 @@ export const useStore = create<AppState>()(
 
     const newUsers = await Promise.all(newUsersPromises);
     
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.bulkAddUsers(newUsers.map(u => {
         const { _plainPassword: _, ...rest } = u;
         return rest;
@@ -1993,7 +2000,7 @@ export const useStore = create<AppState>()(
       lastActionAt: new Date().toISOString()
     } as User;
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addUser(newUser);
     }
     
@@ -2006,7 +2013,7 @@ export const useStore = create<AppState>()(
   },
 
   updateCompanyBranding: async (companyId, branding) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateCompanyBranding(companyId, branding);
     }
     set(state => ({
@@ -2015,7 +2022,7 @@ export const useStore = create<AppState>()(
   },
 
   updateCompanySettings: async (companyId, settings: Partial<Company>) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateCompanySettings(companyId, settings);
     }
     set(state => ({
@@ -2083,7 +2090,7 @@ export const useStore = create<AppState>()(
       approvalChain: newChain
     };
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateOrderStatus(orderId, newStatus);
     }
 
@@ -2111,7 +2118,7 @@ export const useStore = create<AppState>()(
   },
 
   updateLocationBudget: async (locationId, budget) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateLocationBudget(locationId, budget);
     }
     set(state => ({
@@ -2182,7 +2189,7 @@ export const useStore = create<AppState>()(
       if (adminUser) newTicket.assignedTo = adminUser.id;
     }
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.createTicket(newTicket);
     }
 
@@ -2198,7 +2205,7 @@ export const useStore = create<AppState>()(
     const updatePayload: any = { status, updatedAt };
     if (assignedTo) updatePayload.assignedTo = assignedTo;
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateTicketStatus(id, updatePayload);
     }
     set(state => ({
@@ -2222,7 +2229,7 @@ export const useStore = create<AppState>()(
     };
     if (imageUrl) newMessage.imageUrl = imageUrl;
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addTicketMessage(newMessage);
     }
     set(state => ({
@@ -2250,8 +2257,8 @@ export const useStore = create<AppState>()(
 
   // Employee Module Implementations
   addEmployee: async (employee) => {
-    const { isSupabaseConnected } = get();
-    if (isSupabaseConnected) {
+    const { isBackendConnected } = get();
+    if (isBackendConnected) {
       const newEmp = await ApiService.addEmployee(employee);
       set(state => ({ employees: [...state.employees, newEmp] }));
     } else {
@@ -2262,7 +2269,7 @@ export const useStore = create<AppState>()(
   },
 
   updateEmployee: async (id, updates) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateData('employees', id, updates);
     }
     set(state => ({
@@ -2271,7 +2278,7 @@ export const useStore = create<AppState>()(
   },
 
   deleteEmployee: async (id) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteEmployee(id);
     }
     set(state => ({ employees: state.employees.filter(e => e.id !== id) }));
@@ -2476,7 +2483,7 @@ export const useStore = create<AppState>()(
   // Phase 49 Actions
   generateLocationQR: async (locationId) => {
     const token = generateUUID();
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateLocation(locationId, { qrToken: token, qrStatus: 'active' });
     }
     set(state => ({
@@ -2489,7 +2496,7 @@ export const useStore = create<AppState>()(
 
   rotateLocationToken: async (locationId) => {
     const token = generateUUID();
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateLocation(locationId, { qrToken: token, qrStatus: 'active' });
     }
     set(state => ({
@@ -2500,7 +2507,7 @@ export const useStore = create<AppState>()(
   },
 
   updateLocationCoordinates: async (locationId, latitude, longitude) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
        await ApiService.updateLocation(locationId, { latitude, longitude });
     }
     set(state => ({
@@ -2512,7 +2519,7 @@ export const useStore = create<AppState>()(
   },
 
   updateAttendanceTag: async (recordId: string, tag: string) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       const record = get().attendanceRecords.find(r => r.id === recordId);
       if (record) {
         await ApiService.updateAttendanceRecord(recordId, { metadata: { ...record.metadata, workTag: tag } });
@@ -2526,7 +2533,7 @@ export const useStore = create<AppState>()(
   },
 
   approveAttendance: async (id: string) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateAttendanceRecord(id, { status: 'verified', adminRemarks: 'Biometrically Authenticated' });
     }
     set(state => ({
@@ -2538,7 +2545,7 @@ export const useStore = create<AppState>()(
   },
 
   flagAttendance: async (id: string, reason: string) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateAttendanceRecord(id, { status: 'flagged', adminRemarks: reason });
     }
     set(state => ({
@@ -2608,11 +2615,11 @@ export const useStore = create<AppState>()(
       }
     }));
 
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       try {
         await ApiService.submitDailyChecklist(employeeId, completedTasks);
       } catch (e) {
-        console.error('Failed to sync checklist to Supabase:', e);
+        console.error('Failed to sync checklist to Mongo:', e);
       }
     }
 
@@ -2620,7 +2627,7 @@ export const useStore = create<AppState>()(
   },
 
   reassignShift: async (shiftId, locationId) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateShift(shiftId, { locationId });
     }
     set(state => ({
@@ -2636,7 +2643,7 @@ export const useStore = create<AppState>()(
   },
   
   addEmployeeShift: async (shift) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
        const newShift = await ApiService.addShift(shift);
        set(state => ({
          employeeShifts: [...state.employeeShifts, newShift as EmployeeShift]
@@ -2651,7 +2658,7 @@ export const useStore = create<AppState>()(
   },
 
   deleteEmployeeShift: async (shiftId) => {
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteShift(shiftId);
     }
     set(state => ({
@@ -2664,7 +2671,7 @@ export const useStore = create<AppState>()(
   addCustomRole: async (role) => {
     const newRole = { ...role, id: generateUUID() };
     set(state => ({ customRoles: [...state.customRoles, newRole] }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addCustomRole(newRole);
     }
     get().addAlert({ message: `Role ${newRole.name} established.`, type: 'success' });
@@ -2674,7 +2681,7 @@ export const useStore = create<AppState>()(
     set(state => ({
       customRoles: state.customRoles.map(r => r.id === id ? { ...r, ...updates } : r)
     }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateCustomRole(id, updates);
     }
     get().addAlert({ message: 'Role configurations updated.', type: 'info' });
@@ -2684,7 +2691,7 @@ export const useStore = create<AppState>()(
     set(state => ({
       customRoles: state.customRoles.filter(r => r.id !== id)
     }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteCustomRole(id);
     }
     get().addAlert({ message: 'Role permanently decommissioned.', type: 'warning' });
@@ -2693,7 +2700,7 @@ export const useStore = create<AppState>()(
   addWorkAssignment: async (assignment) => {
     const newAssignment = { ...assignment, id: generateUUID(), createdAt: new Date().toISOString() };
     set(state => ({ workAssignments: [...state.workAssignments, newAssignment] }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addWorkAssignment(newAssignment);
     }
     get().addAlert({ message: 'New work assignment deployed.', type: 'success' });
@@ -2703,7 +2710,7 @@ export const useStore = create<AppState>()(
     set(state => ({
       workAssignments: state.workAssignments.map(a => a.id === id ? { ...a, ...updates } : a)
     }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateWorkAssignment(id, updates);
     }
     get().addAlert({ message: 'Work assignment updated.', type: 'info' });
@@ -2715,7 +2722,7 @@ export const useStore = create<AppState>()(
         a.id === id ? { ...a, status: 'archived' } : a
       )
     }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateWorkAssignment(id, { status: 'archived' });
     }
     get().addAlert({ message: 'Work assignment recalled and archived.', type: 'warning' });
@@ -2724,7 +2731,7 @@ export const useStore = create<AppState>()(
   addSiteProtocol: async (protocol) => {
     const newProtocol = { ...protocol, id: generateUUID() };
     set(state => ({ siteProtocols: [...state.siteProtocols, newProtocol] }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.addSiteProtocol(newProtocol);
     }
     get().addAlert({ message: 'Site protocol successfully codified.', type: 'success' });
@@ -2733,7 +2740,7 @@ export const useStore = create<AppState>()(
     set(state => ({
       siteProtocols: state.siteProtocols.filter(p => p.id !== id)
     }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteSiteProtocol(id);
     }
     get().addAlert({ message: 'Site protocol decommissioned.', type: 'warning' });
@@ -2791,7 +2798,7 @@ export const useStore = create<AppState>()(
     set(state => ({
       attendanceRecords: state.attendanceRecords.map(r => r.id === id ? { ...r, ...updates } : r)
     }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.updateAttendanceRecord(id, updates);
     }
     get().addAlert({ message: 'Punch register heavily modified.', type: 'warning' });
@@ -2800,7 +2807,7 @@ export const useStore = create<AppState>()(
     set(state => ({
       attendanceRecords: state.attendanceRecords.filter(r => r.id !== id)
     }));
-    if (get().isSupabaseConnected) {
+    if (get().isBackendConnected) {
       await ApiService.deleteAttendanceRecord(id);
     }
     get().addAlert({ message: 'Timesheet log violently expunged from database.', type: 'error' });
@@ -2832,17 +2839,17 @@ export const useStore = create<AppState>()(
     get().addAlert({ message: 'Supervisor-originated manual shift shift entry accepted.', type: 'info' });
   },
 
-  pushLocalToCloud: async () => {
-    const { isSupabaseConnected, addAlert, ...state } = get();
-    if (!isSupabaseConnected) {
-       addAlert({ message: 'Cloud link mandatory for Global Push.', type: 'error' });
+  pushLocalToBackend: async () => {
+    const { isBackendConnected, addAlert, ...state } = get();
+    if (!isBackendConnected) {
+       addAlert({ message: 'Connect to the API first (sign in with a valid account).', type: 'error' });
        return;
     }
     
-    addAlert({ message: 'Initializing Disaster Recovery: Re-seeding Cloud...', type: 'info' });
+    addAlert({ message: 'Pushing local data to Mongo via API...', type: 'info' });
     
     try {
-      // Logic for pushing all local state to Supabase
+      // Push local state to Mongo via /api/data/*
       // NOTE: This uses upsert where possible to avoid duplicates
       
       const push = async (label: string, data: any[], pushMethod: (item: any) => Promise<any>) => {
@@ -2855,7 +2862,7 @@ export const useStore = create<AppState>()(
              console.warn(`Partial Push Failure [${label}]:`, e);
            }
         }
-        console.log(`✅ Disaster Recovery: Pushed ${count} ${label} records.`);
+        console.log(`✅ Pushed ${count} ${label} record(s) to server.`);
       };
 
       await push('Products', state.products, (i) => ApiService.addProduct(i));
@@ -2866,7 +2873,7 @@ export const useStore = create<AppState>()(
       await push('Work Reports', state.workReports, (i) => ApiService.submitWorkReport(i));
       await push('Audits', state.auditLogs, (i) => ApiService.logAction(i.userId, i.action, i.details));
 
-      addAlert({ message: 'Global Cloud Recall successfully executed. Database synchronized.', type: 'success' });
+      addAlert({ message: 'Local data push finished. Mongo should reflect new rows.', type: 'success' });
     } catch (e: any) {
       addAlert({ message: `Push failed: ${e.message}`, type: 'error' });
     }
@@ -2879,7 +2886,7 @@ export const useStore = create<AppState>()(
         // Do not persist server-canonical lists — rehydrate was overwriting fresh API sync
         // so admin/other devices never "saw" Mongo data after reload.
         const {
-          isSupabaseConnected: _c,
+          isBackendConnected: _c,
           alerts: _a,
           workReports: _wr,
           attendanceRecords: _att,

@@ -26,7 +26,7 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 const WorkReports: React.FC = () => {
-  const { currentUser, workReports, employees, submitWorkReport, locations, isSupabaseConnected } = useStore();
+  const { currentUser, workReports, employees, submitWorkReport, locations, isBackendConnected } = useStore();
 
   const employee = employees.find(e => e.userId === currentUser?.id);
   const effectiveEmployeeId = employee?.id || currentUser?.id || '';
@@ -127,7 +127,7 @@ const WorkReports: React.FC = () => {
         );
 
         if (distance > 150) { 
-          if (!isSupabaseConnected || import.meta.env.VITE_BYPASS_GEOFENCE === 'true') {
+          if (!isBackendConnected || import.meta.env.VITE_BYPASS_GEOFENCE === 'true') {
              setDistError(`Testing Bypass: Geofence mismatch ignored (${Math.round(distance)}m).`);
              setLocationVerified(true);
           } else {

@@ -16,11 +16,27 @@ export default defineConfig({
             res.setHeader('Content-Type', 'application/json');
             
             if (req.url.includes('/auth/login')) {
-               return res.end(JSON.stringify({ token: 'mock-jwt', user: { name: 'Field User Sameer', role: 'employee' } }));
+               // Basic role switching for tests
+               const role = req.url.includes('master') || (req.method === 'POST') ? 'admin' : 'employee';
+               // Actually we need to read the body for POST, but vite-plugin-mock-dev-server or similar might be needed for that.
+               // Since it's a simple middleware, we can check the URL or just default to admin for now if we want to test admin.
+               return res.end(JSON.stringify({ 
+                 token: 'mock-jwt', 
+                 user: { 
+                   name: 'Master Admin', 
+                   role: role,
+                   email: 'master@pyramidfms.com'
+                 } 
+               }));
             }
             
             if (req.url.includes('/data/')) {
-               return res.end(JSON.stringify([])); // Empty success for sync
+               // Provide minimal mock data so pages aren't empty
+               const sampleData = [
+                 { id: '1', name: 'Sample Item 1', status: 'active', createdAt: new Date().toISOString() },
+                 { id: '2', name: 'Sample Item 2', status: 'pending', createdAt: new Date().toISOString() }
+               ];
+               return res.end(JSON.stringify(sampleData));
             }
 
             res.statusCode = 200;
@@ -45,7 +61,7 @@ export default defineConfig({
             if (id.includes('recharts')) return 'vendor-charts';
             if (id.includes('jspdf') || id.includes('jspdf-autotable') || id.includes('html2canvas')) return 'vendor-pdf-engine';
             if (id.includes('html5-qrcode') || id.includes('qrcode.react')) return 'vendor-scanner';
-            if (id.includes('supabase') || id.includes('zustand')) return 'vendor-core';
+            if (id.includes('zustand')) return 'vendor-core';
             return 'vendor-others';
           }
         }

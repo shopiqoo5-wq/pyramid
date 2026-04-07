@@ -1,7 +1,7 @@
 -- =========================================================================
 -- PYRAMID FM - STANDALONE POSTGRESQL SCHEMA (V1.0)
 -- This script is designed to run on a standard PostgreSQL 13+ instance.
--- It removes all Supabase-specific dependencies (Auth, RLS, Storage Extensions).
+-- Plain Postgres only (no vendor-hosted auth/RLS/storage extensions required).
 -- =========================================================================
 
 -- 1. EXTENSIONS (Optional but recommended)

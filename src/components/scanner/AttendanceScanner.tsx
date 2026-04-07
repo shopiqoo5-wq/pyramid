@@ -29,7 +29,7 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, initialPayload, onCancel, onComplete }) => {
-  const { locations, isSupabaseConnected } = useStore();
+  const { locations, isBackendConnected } = useStore();
   
   const [step, setStep] = useState<ScanStep>('requesting_permissions');
   const [errorMsg, setErrorMsg] = useState('');
@@ -195,7 +195,7 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, initialPa
           );
 
           if (distance > 100) { // 100 meters strict radius
-            if (!isSupabaseConnected || import.meta.env.VITE_BYPASS_GEOFENCE === 'true') {
+            if (!isBackendConnected || import.meta.env.VITE_BYPASS_GEOFENCE === 'true') {
               console.warn(`GEOFENCE BYPASS ACTIVE: (${Math.round(distance)}m).`);
               setGpsData({ lat: position.coords.latitude, lng: position.coords.longitude });
               setStep('capturing_photo');
@@ -215,7 +215,7 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ action, initialPa
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
-  }, [step, scannedData, locations, isSupabaseConnected]);
+  }, [step, scannedData, locations, isBackendConnected]);
 
   useEffect(() => {
     let stream: MediaStream | null = null;

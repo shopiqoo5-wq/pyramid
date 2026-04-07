@@ -88,7 +88,7 @@ const AdminProducts: React.FC = () => {
     if (newProductImageFile) {
       setIsUploadingImage(true);
       try {
-        // Store inline as a Data URL so it persists without Supabase Storage
+        // Store inline as a Data URL so it persists via Mongo/API (no object storage)
         finalImageUrl = await fileToDataUrl(newProductImageFile);
       } catch (e) { console.error('Image upload error', e); }
       setIsUploadingImage(false);

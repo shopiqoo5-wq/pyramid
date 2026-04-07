@@ -14,7 +14,7 @@ export const sendTransactionalSMS = async (_payload: SMSPayload): Promise<boolea
   return new Promise((resolve) => {
     setTimeout(() => {
       // In a real frontend environment, we wouldn't send secrets. We would hit 
-      // a Vercel Serverless Function or Supabase Edge Function that holds the API Key.
+      // a Vercel serverless route or other backend that holds the API key.
       // Example: await fetch('/api/send-sms', { method: 'POST', body: JSON.stringify(payload) })
       resolve(true);
     }, 800);

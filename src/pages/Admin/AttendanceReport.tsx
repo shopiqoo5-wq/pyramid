@@ -15,12 +15,12 @@ import { motion } from 'framer-motion';
 import './Dashboard.css';
 
 const AttendanceReport: React.FC = () => {
-  const { locations, attendanceRecords, employees, initSupabase, isSupabaseConnected } = useStore((state: any) => state);
+  const { locations, attendanceRecords, employees, initBackend, isBackendConnected } = useStore((state: any) => state);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await initSupabase();
+    await initBackend();
     setIsRefreshing(false);
   };
 
@@ -47,7 +47,7 @@ const AttendanceReport: React.FC = () => {
           <p className="text-muted">High-fidelity statistical analysis and real-time occupancy forensics.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          {isSupabaseConnected && (
+          {isBackendConnected && (
             <button 
               onClick={handleRefresh}
               disabled={isRefreshing}
@@ -68,7 +68,7 @@ const AttendanceReport: React.FC = () => {
               className="lift"
             >
               <LuRefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
-              {isRefreshing ? 'SYNCING...' : 'SYNC WITH CLOUD'}
+              {isRefreshing ? 'SYNCING...' : 'SYNC WITH SERVER'}
             </button>
           )}
           <Badge variant="primary" style={{ padding: '0.5rem 1rem', fontSize: '0.75rem', fontWeight: 900 }}>

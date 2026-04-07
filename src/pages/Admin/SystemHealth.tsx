@@ -165,7 +165,7 @@ const SystemHealth: React.FC = () => {
            </div>
            
            <div style={{ padding: '1rem', textAlign: 'center', borderTop: '1px solid var(--border)', background: 'var(--surface-hover)' }}>
-              <span className="text-muted" style={{ fontSize: '0.75rem' }}>Streaming telemetry from Supabase...</span>
+              <span className="text-muted" style={{ fontSize: '0.75rem' }}>Streaming telemetry from Mongo API...</span>
            </div>
         </Card>
       </div>

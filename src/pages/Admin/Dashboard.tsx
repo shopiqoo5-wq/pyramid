@@ -29,13 +29,13 @@ const Dashboard: React.FC = () => {
   const attendanceRecords = useStore(state => state.attendanceRecords);
   const workReports = useStore(state => state.workReports);
   const calculateDemandForecast = useStore(state => state.calculateDemandForecast);
-  const initSupabase = useStore(state => state.initSupabase);
-  const isSupabaseConnected = useStore(state => state.isSupabaseConnected);
+  const initBackend = useStore(state => state.initBackend);
+  const isBackendConnected = useStore(state => state.isBackendConnected);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await initSupabase();
+    await initBackend();
     setIsRefreshing(false);
   };
   
@@ -150,7 +150,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-           {isSupabaseConnected && (
+           {isBackendConnected && (
              <Button 
                variant="ghost" 
                onClick={handleRefresh}
@@ -158,7 +158,7 @@ const Dashboard: React.FC = () => {
                style={{ border: '1px solid var(--primary)', color: 'var(--primary)', borderRadius: '12px' }}
              >
                <LuRefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} style={{ marginRight: '8px' }} />
-               {isRefreshing ? 'SYNCING...' : 'SYNC WITH CLOUD'}
+               {isRefreshing ? 'SYNCING...' : 'SYNC WITH SERVER'}
              </Button>
            )}
            <Button variant="secondary" onClick={() => navigate('/admin/ops-audit')} className="lift shadow-sm">
@@ -395,7 +395,7 @@ const Dashboard: React.FC = () => {
                    { label: 'Global Inventory Ledger', path: '/admin/inventory', icon: <LuLayoutDashboard />, desc: 'Real-time multi-site stock' },
                     { label: 'Corporate Client Portal', path: '/admin/clients', icon: <LuUsers />, desc: 'Access & contract controls' },
                     { label: 'Identity Verification', path: '/admin/attendance-report', icon: <LuShieldCheck />, desc: 'Biometric audit stream' },
-                    { label: 'Cloud Event Webhooks', path: '/admin/webhooks', icon: <LuActivity />, desc: 'External API synchronizations' },
+                    { label: 'Event Webhooks', path: '/admin/webhooks', icon: <LuActivity />, desc: 'Outbound HTTP callbacks' },
                  ].map((link, i) => (
                    <button 
                     key={i}

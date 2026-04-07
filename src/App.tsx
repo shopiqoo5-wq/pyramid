@@ -77,7 +77,7 @@ import AgreementConsole from './pages/Portal/AgreementConsole';
 import AttendanceLoggingQR from './pages/AttendanceLoggingQR';
 
 const App: React.FC = () => {
-  const initSupabase = useStore((state) => state.initSupabase);
+  const initBackend = useStore((state) => state.initBackend);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -95,8 +95,8 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    initSupabase();
-  }, [initSupabase]);
+    initBackend();
+  }, [initBackend]);
 
   return (
     <BrowserRouter>

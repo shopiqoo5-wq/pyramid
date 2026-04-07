@@ -1,3 +1,7 @@
+/**
+ * OPTIONAL one-off: copy rows from a legacy Supabase project into MongoDB.
+ * The deployed app does not use Supabase — all reads/writes go to Mongo via /api.
+ */
 import { createClient } from '@supabase/supabase-js';
 import mongoose from 'mongoose';
 import * as Schemas from '../src/models/Schemas';
