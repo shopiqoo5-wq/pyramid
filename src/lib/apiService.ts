@@ -330,10 +330,9 @@ export const ApiService: any = {
     _bucket: string,
     _path: string,
     body: File | Blob,
-    opts?: { maxEdge?: number; jpegQuality?: number }
+    opts?: { jpegQuality?: number; maxEdge?: number }
   ) {
     if (!(body instanceof Blob)) return '';
-    const maxEdge = opts?.maxEdge ?? 1920;
     const jpegQuality = opts?.jpegQuality ?? 0.82;
     const mime = body instanceof File ? body.type : body.type || '';
     const looksImage =
@@ -349,12 +348,14 @@ export const ApiService: any = {
 
     if (looksImage) {
       try {
-        let dataUrl = await ApiService.imageToCompressedDataUrl(body, maxEdge, jpegQuality);
+        const initialMax = 1280;
+        let dataUrl = await ApiService.imageToCompressedDataUrl(body, initialMax, jpegQuality);
         if (dataUrl.length > VERCEL_JSON_BODY_SAFE_CHARS) {
+          // If still too large, drop to 800px and lower quality for transmission
           dataUrl = await ApiService.imageToCompressedDataUrl(
             body,
-            Math.min(1280, maxEdge),
-            Math.min(0.72, jpegQuality)
+            800,
+            0.65
           );
         }
         return ensureUnderLimit(dataUrl);

@@ -487,7 +487,7 @@ const WorkReports: React.FC = () => {
                         </Button>
                       )}
                    </div>
-                   {!site?.latitude && (
+                   {!site?.latitude && !distError && (
                      <div style={{ marginTop: '1rem', color: '#fff', fontSize: '0.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'var(--primary)', borderRadius: '16px', boxShadow: '0 8px 20px var(--primary-glow)', opacity: 0.9 }}>
                         <LuInfo size={18} /> Site coordinates not configured. Verification bypassed.
                      </div>
