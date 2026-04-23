@@ -1,9 +1,14 @@
 import '../_utils/suppressDep0169.js';
-import pg from 'pg';
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import ws from 'ws';
 
-const { Pool } = pg;
+// Set up WebSocket for drivers that need it (standard for @neondatabase/serverless)
+if (!process.env.VERCEL) {
+  // Only needed for local development if not using the HTTP fetch fallback
+  neonConfig.webSocketConstructor = ws;
+}
 
-let cachedPool: pg.Pool | null = null;
+let cachedPool: Pool | null = null;
 
 export default function getPool() {
   if (cachedPool) return cachedPool;
@@ -15,9 +20,6 @@ export default function getPool() {
 
   cachedPool = new Pool({
     connectionString,
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
   });
 
   return cachedPool;

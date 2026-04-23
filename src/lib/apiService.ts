@@ -22,7 +22,8 @@ function normalizeApiPayload(data: unknown): unknown {
 const VERCEL_JSON_BODY_SAFE_CHARS = 2_400_000;
 
 const fetchApi = async (path: string, options: RequestInit = {}) => {
-  const token = localStorage.getItem('pyramid_auth_token');
+  const rawToken = localStorage.getItem('pyramid_auth_token');
+  const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : null;
   
   // Guard: Don't call protected data routes without a token to avoid 401 spam.
   if (!token && (path.startsWith('/data/') || path === '/auth/me')) {

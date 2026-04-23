@@ -1,11 +1,11 @@
 {
   "build": {
     "env": {
-      "NODE_OPTIONS": "--disable-warning=DEP0169"
+      "NODE_OPTIONS": "--no-warnings"
     }
   },
   "env": {
-    "NODE_OPTIONS": "--disable-warning=DEP0169"
+    "NODE_OPTIONS": "--no-warnings"
   },
   "rewrites": [
     {

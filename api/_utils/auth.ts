@@ -1,3 +1,4 @@
+import '../_utils/suppressDep0169.js';
 import type { VercelRequest } from '@vercel/node';
 import jwt from 'jsonwebtoken';
 
@@ -10,7 +11,7 @@ export type JwtPayload = {
 const getSecret = () => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    console.error('[auth] CRITICAL: JWT_SECRET is missing!');
+    console.error('[auth] CRITICAL: JWT_SECRET environment variable is missing.');
     const err = new Error('JWT_SECRET is missing in server environment');
     (err as any).status = 500;
     throw err;
@@ -21,16 +22,17 @@ const getSecret = () => {
 export function getBearerToken(req: VercelRequest): string | null {
   const header = req.headers.authorization || req.headers.Authorization;
   const raw = Array.isArray(header) ? header[0] : (header as string);
-  if (!raw) return null;
+  if (!raw || raw === 'undefined' || raw === 'null') return null;
   const m = raw.match(/^Bearer\s+(.+)$/i);
   return m?.[1] || null;
 }
 
 export function requireAuth(req: VercelRequest): JwtPayload {
   const token = getBearerToken(req);
+  
   if (!token) {
-    console.warn('[auth] No token provided in headers');
-    const err = new Error('Unauthorized: No session token provided');
+    console.warn('[auth] No token provided');
+    const err = new Error('Unauthorized: No session token found');
     (err as any).status = 401;
     throw err;
   }
@@ -38,19 +40,12 @@ export function requireAuth(req: VercelRequest): JwtPayload {
   try {
     const secret = getSecret();
     const payload = jwt.verify(token, secret) as JwtPayload;
-    if (!payload?.userId) {
-      console.error('[auth] Token missing userId payload');
-      throw new Error('Malformed session token: missing userId');
-    }
+    if (!payload.userId) throw new Error('Missing userId in token');
     return payload;
   } catch (err: any) {
-    const isSecretMissing = err.message?.includes('missing in server environment');
-    if (!isSecretMissing) {
-      console.warn(`[auth] Token verification failed: ${err.message}`);
-    }
-    const msg = isSecretMissing ? err.message : `Unauthorized: ${err.message || 'Invalid token'}`;
-    const enriched = new Error(msg);
-    (enriched as any).status = isSecretMissing ? 500 : 401;
+    console.warn(`[auth] Rejection: ${err.message}`);
+    const enriched = new Error('Unauthorized: Invalid or expired token');
+    (enriched as any).status = 401;
     throw enriched;
   }
 }
