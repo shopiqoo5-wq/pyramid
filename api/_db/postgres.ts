@@ -1,3 +1,4 @@
+import '../_utils/suppressDep0169.js';
 import pg from 'pg';
 
 const { Pool } = pg;

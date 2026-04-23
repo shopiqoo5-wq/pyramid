@@ -19,7 +19,7 @@ const getSecret = () => {
 
 export function getBearerToken(req: VercelRequest): string | null {
   const header = req.headers.authorization || req.headers.Authorization;
-  const raw = Array.isArray(header) ? header[0] : header;
+  const raw = Array.isArray(header) ? header[0] : (header as string);
   if (!raw) return null;
   const m = raw.match(/^Bearer\s+(.+)$/i);
   return m?.[1] || null;
@@ -28,20 +28,21 @@ export function getBearerToken(req: VercelRequest): string | null {
 export function requireAuth(req: VercelRequest): JwtPayload {
   const token = getBearerToken(req);
   if (!token) {
-    const err = new Error('Unauthorized: Verification token required');
+    const err = new Error('Unauthorized: No session token provided');
     (err as any).status = 401;
     throw err;
   }
 
   try {
-    const payload = jwt.verify(token, getSecret()) as JwtPayload;
-    if (!payload?.userId) throw new Error('Malformed session token payload');
+    const secret = getSecret();
+    const payload = jwt.verify(token, secret) as JwtPayload;
+    if (!payload?.userId) throw new Error('Malformed session token: missing userId');
     return payload;
   } catch (err: any) {
     const isSecretMissing = err.message?.includes('missing in server environment');
-    const enriched = new Error(err.message || 'Unauthorized');
+    const msg = isSecretMissing ? err.message : `Unauthorized: ${err.message || 'Invalid token'}`;
+    const enriched = new Error(msg);
     (enriched as any).status = isSecretMissing ? 500 : 401;
     throw enriched;
   }
 }
-
