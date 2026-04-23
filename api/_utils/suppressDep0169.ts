@@ -31,6 +31,7 @@ const proc = process as typeof process & { [patchKey]?: true };
 
 if (!proc[patchKey] && typeof proc.emitWarning === 'function') {
   proc[patchKey] = true;
+  console.log('🛡️ Deprecation warnings suppressed (DEP0169).');
   const original: EmitWarning = proc.emitWarning.bind(proc);
   proc.emitWarning = function suppressDep0169Wrapper(warning: unknown, ...args: unknown[]) {
     if (shouldSilence(warning, args)) return;
