@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import connectToDatabase from '../_db/mongodb.js';
-import { castModel } from '../_db/castModel.js';
-import { User } from '../_db/Schemas.js';
+import { query } from '../_db/postgres.js';
+import { keysToCamel } from '../_db/sqlUtils.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
@@ -17,32 +16,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error('❌ Missing JWT_SECRET env var');
       return res.status(500).json({ message: 'JWT_SECRET is missing in server environment' });
     }
-    await connectToDatabase();
+
     const { email, password } = req.body;
 
-    const M = castModel(User);
-    const user = await M.findOne({ email });
+    const result = await query('SELECT * FROM users WHERE email = $1', [email]);
+    const user = result.rows[0];
+
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Convert keys to camelCase for consistency with frontend
+    const camelUser = keysToCamel(user);
+
     // For demo/migration, handle plain text or hashed
-    const isMatch = await bcrypt.compare(password, user.password).catch(() => password === user.password);
+    const isMatch = await bcrypt.compare(password, user.password_hash || '').catch(() => password === user.password || password === user.password_hash);
     
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const userId = String((user as { _id: { toString(): string } })._id);
     const token = jwt.sign(
-      { userId, role: user.role, companyId: user.companyId },
+      { userId: camelUser.id, role: camelUser.role, companyId: camelUser.companyId },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    const { password: _, ...userWithoutPassword } = user.toObject();
+    const { password: _, password_hash: __, ...userWithoutPassword } = camelUser;
     res.status(200).json({ token, user: userWithoutPassword });
   } catch (error: any) {
+    console.error('[auth/login] error:', error);
     res.status(500).json({ message: error.message });
   }
 }

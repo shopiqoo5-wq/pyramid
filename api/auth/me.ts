@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import connectToDatabase from '../_db/mongodb.js';
-import { castModel } from '../_db/castModel.js';
-import { User } from '../_db/Schemas.js';
+import { query } from '../_db/postgres.js';
+import { keysToCamel } from '../_db/sqlUtils.js';
 import { getBearerToken, requireAuth } from '../_utils/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -12,15 +11,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const { userId } = requireAuth(req);
-    await connectToDatabase();
 
-    const M = castModel(User);
-    const user = await M.findById(userId).exec();
+    const result = await query('SELECT * FROM users WHERE id = $1', [userId]);
+    const user = result.rows[0];
+
     if (!user) {
       return res.status(401).json({ message: 'Session user not found' });
     }
 
-    const { password: _pw, ...userWithoutPassword } = user.toObject();
+    const camelUser = keysToCamel(user);
+    const { password: _pw, password_hash: _ph, ...userWithoutPassword } = camelUser;
     return res.status(200).json(userWithoutPassword);
   } catch (e: any) {
     const status = e.status || 500;
@@ -32,10 +32,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       lower.includes('unauthorized') ||
       lower.includes('authorization');
 
-    if (status === 500) return res.status(500).json({ message: msg });
+    if (status === 500) {
+      console.error('[auth/me] error:', e);
+      return res.status(500).json({ message: msg });
+    }
     // 401 so the client clears bad tokens and data routes stay consistent.
     if (isAuthError) return res.status(401).json({ message: msg });
     return res.status(status).json({ message: msg });
   }
 }
-

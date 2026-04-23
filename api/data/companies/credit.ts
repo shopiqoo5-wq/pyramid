@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import connectToDatabase from '../../_db/mongodb.js';
-import { castModel } from '../../_db/castModel.js';
-import { Company } from '../../_db/Schemas.js';
+import { query } from '../../_db/postgres.js';
+import { keysToCamel } from '../../_db/sqlUtils.js';
 import { requireAuth } from '../../_utils/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -9,7 +8,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     requireAuth(req);
-    await connectToDatabase();
 
     const { id } = req.query;
     const companyId = String(id || '');
@@ -19,14 +17,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const delta = Number(amount);
     if (!Number.isFinite(delta)) return res.status(400).json({ message: 'amount must be a number' });
 
-    const updated = await castModel(Company).findByIdAndUpdate(
-      companyId,
-      { $inc: { availableCredit: delta } },
-      { new: true }
+    const result = await query(
+      `UPDATE companies 
+       SET available_credit = available_credit + $1, 
+           updated_at = NOW() 
+       WHERE id = $2 
+       RETURNING *`,
+      [delta, companyId]
     );
-    return res.status(200).json(updated);
+
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Company not found' });
+
+    return res.status(200).json(keysToCamel(result.rows[0]));
   } catch (e: any) {
+    console.error('[companies/credit] error:', e);
     return res.status(500).json({ message: e?.message || 'Failed to update credit' });
   }
 }
-
