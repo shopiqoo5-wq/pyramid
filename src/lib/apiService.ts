@@ -258,7 +258,6 @@ export const ApiService: any = {
   getFraudFlags() { return this.fetchData('fraud_flags'); },
   getExceptions() { return this.fetchData('exceptions'); },
   getDailyChecklists() { return this.fetchData('daily_checklists'); },
-  getBatches() { return this.fetchData('batches'); },
   getPhotoVerifications() { return this.fetchData('photo_verifications'); },
 
   // Infrastructure Cont.
